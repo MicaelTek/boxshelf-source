@@ -2,14 +2,14 @@
 // the code: text nodes and the placeholder / title / aria-label attributes whose whole text (trimmed) is in the chosen
 // language's dictionary (renderer/locales/<lang>.js, window.BS_LOCALES[lang] = { strings: {en: tr}, rules: [[RegExp, tr]] }).
 // Exact matches only, so game titles, paths and anything the player typed are never changed. English is the code itself:
-// with ui.lang 'en' (or 'auto' on a non-matching system) this file does nothing. Text drawn on a canvas (the 3D museum,
-// box spines) isn't covered. An element (or any ancestor) with data-no-i18n is left alone.
+// with ui.lang 'en' (or 'auto' on a non-matching system) this file does nothing. Text drawn on a canvas goes through the
+// same dictionary (see fillText below). An element (or any ancestor) with data-no-i18n is left alone.
 (function(){
 "use strict";
 const LS_KEY="bs-lang";
 const ATTRS=["placeholder","title","aria-label","data-st"]; // data-st: the setup sidebar's status word, shown by CSS attr()
 const SKIP=new Set(["SCRIPT","STYLE","TEXTAREA","INPUT","SELECT","CODE","PRE","CANVAS","SVG"]);
-let lang="en",dict=null,rules=[],obs=null,pending=new Set(),queued=false,mine=0; // mine: texts translated so far
+let lang="en",dict=null,rules=[],obs=null,mine=0; // mine: texts translated so far
 const memo=new Map(); // text → its pattern translation (or null): the shelf redraws the same strings over and over
 let upper=null; // the dictionary by its keys in capitals, built the first time an ALL CAPS text comes by
 // node → { o: original English, t: what we put there }: a node whose text is still our own translation is left alone,
@@ -99,14 +99,6 @@ function doAttrs(el){
     else if(rec)delete rec[a];
   }
 }
-function walk(root){
-  if(!root)return;
-  if(root.nodeType===3){doText(root);return}
-  if(root.nodeType!==1&&root.nodeType!==9&&root.nodeType!==11)return;
-  if(root.nodeType===1){if(skipped(root))return;doAttrs(root)}
-  const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT|NodeFilter.SHOW_ELEMENT,{acceptNode:n=>n.nodeType===1&&SKIP.has(n.tagName.toUpperCase())?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
-  let n;while((n=w.nextNode())){if(n.nodeType===3)doText(n);else doAttrs(n)}
-}
 // a problem with one node must never leave the rest of the batch (a whole menu built at once) in English: each node on
 // its own, and the first few problems go to the log (boxshelf.log) with the text that caused them
 let errs=0;
@@ -119,18 +111,22 @@ function walkSafe(root){
   const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT|NodeFilter.SHOW_ELEMENT,{acceptNode:n=>n.nodeType===1&&SKIP.has(n.tagName.toUpperCase())?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
   let n;while((n=w.nextNode())){try{if(n.nodeType===3)doText(n);else doAttrs(n)}catch(e){report(e,n)}}
 }
-function flush(){
-  queued=false;const list=[...pending];pending.clear();
-  if(obs)obs.disconnect();
-  try{for(const n of list){try{if(n.isConnected)walkSafe(n)}catch(e){report(e,n)}}}finally{if(obs&&dict)observe()}
+// The page's changes are translated right in the observer's callback, never later and never with the observer switched
+// off: switching it off (to ignore our own edits) threw away whatever the page changed in between, so a menu built by
+// async code at the wrong moment stayed in English for good. Our own edits are dropped afterwards with takeRecords(),
+// which is safe because no page code can run while this callback does.
+function handle(ms){
+  const list=new Set();
+  for(const m of ms){
+    if(m.type==="characterData"||m.type==="attributes")list.add(m.target);
+    else for(const n of m.addedNodes)list.add(n);
+  }
+  if(!dict)return;
+  for(const n of list){try{if(n.isConnected)walkSafe(n)}catch(e){report(e,n)}}
+  if(obs)obs.takeRecords(); // only our own edits are in there
 }
-function queue(n){pending.add(n);if(!queued){queued=true;queueMicrotask(flush)}}
 function observe(){
-  if(!obs)obs=new MutationObserver(ms=>{for(const m of ms){
-    if(m.type==="characterData")queue(m.target);
-    else if(m.type==="attributes")queue(m.target);
-    else for(const n of m.addedNodes)queue(n);
-  }});
+  if(!obs)obs=new MutationObserver(handle);
   obs.observe(document.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:ATTRS});
 }
 // back to English: every node we changed gets its original text again
@@ -175,13 +171,12 @@ window.BsI18n={
 
 // safety net: now and then, when the page is idle, anything on screen still in English that the dictionary knows (text
 // that changed in a way the observer didn't report) is translated. Cheap: nodes already done or unknown are a map lookup.
-let sweeps=0,fixed=0;
+let sweeps=0;
 function sweep(){
-  if(dict&&document.body&&!document.hidden){const before=countMine();walkSafe(document.body);const got=countMine()-before;
-    if(got>0){fixed+=got;if(sweeps++<3)try{window.boxshelf&&window.boxshelf.log&&window.boxshelf.log(`i18n: sweep translated ${got} missed text(s)`)}catch{}}}
+  if(dict&&document.body&&!document.hidden){const before=mine;walkSafe(document.body);if(obs)obs.takeRecords();const got=mine-before;
+    if(got>0&&sweeps++<3)try{window.boxshelf&&window.boxshelf.log&&window.boxshelf.log(`i18n: sweep translated ${got} missed text(s)`)}catch{}}
   schedule();
 }
-const countMine=()=>mine;
 function schedule(){const go=()=>sweep();setTimeout(()=>{if(window.requestIdleCallback)requestIdleCallback(go,{timeout:2000});else go()},2500)}
 schedule();
 
