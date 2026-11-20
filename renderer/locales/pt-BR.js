@@ -18,6 +18,10 @@ rules:[
   [/^(\d+) players? \(co-op\)$/, (_, n) => n + (n === "1" ? " jogador" : " jogadores") + " (cooperativo)"],
   [/^(\d+) (hours?|h) played$/, (_, n) => n + " h jogadas"],
   [/^Rated (.+)$/, (_, r) => "Classificação " + r],
+  // when a game was last played (fmtDate / fmtDay) and for how long (fmtPlay)
+  [/^(\d+) days ago$/, (_, n) => "há " + n + " dias"],
+  [/^last played (today|yesterday|never|\d+ days ago|.+)$/, (_, w) => "jogado " + ({ today: "hoje", yesterday: "ontem", never: "nunca" }[w] || (/days ago$/.test(w) ? "há " + w.split(" ")[0] + " dias" : "em " + w))],
+  [/^(\d+ h(?: \d+ min)?|\d+ min|under a minute) played$/, (_, t) => (t === "under a minute" ? "menos de um minuto" : t) + " de jogo"],
 ],
 patterns:{
   "({0} borrow-only or without a usable file were left out)": "({0} apenas para empréstimo ou sem arquivo utilizável foram deixados de fora)",
@@ -2971,6 +2975,7 @@ strings:{
   "to go back.": "para voltar.",
   "to return to the shelf.": "para voltar à prateleira.",
   "to watch": "para assistir",
+  "today": "hoje",
   "Today": "Hoje",
   "toned down": "reduzidos",
   "Trailer chosen": "Trailer escolhido",
@@ -3190,6 +3195,7 @@ strings:{
   "Year": "Ano",
   "years ago": "anos atrás",
   "Yes, download box art": "Sim, baixar capas",
+  "yesterday": "ontem",
   "Yesterday": "Ontem",
   "yet": "ainda",
   "You can add it any time in Settings → System.": "Você pode adicioná-lo a qualquer momento em Configurações → Sistema.",

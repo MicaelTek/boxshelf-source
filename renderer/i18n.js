@@ -9,7 +9,7 @@
 const LS_KEY="bs-lang";
 const ATTRS=["placeholder","title","aria-label","data-st"]; // data-st: the setup sidebar's status word, shown by CSS attr()
 const SKIP=new Set(["SCRIPT","STYLE","TEXTAREA","INPUT","SELECT","CODE","PRE","CANVAS","SVG"]);
-let lang="en",dict=null,rules=[],obs=null,pending=new Set(),queued=false;
+let lang="en",dict=null,rules=[],obs=null,pending=new Set(),queued=false,mine=0; // mine: texts translated so far
 const memo=new Map(); // text → its pattern translation (or null): the shelf redraws the same strings over and over
 let upper=null; // the dictionary by its keys in capitals, built the first time an ALL CAPS text comes by
 // node → { o: original English, t: what we put there }: a node whose text is still our own translation is left alone,
@@ -85,7 +85,7 @@ function doText(n){
   if(!dict){if(rec&&cur===rec.t)n.nodeValue=rec.o;return}
   if(!n.parentElement||skipped(n.parentElement))return;
   const t=tr(src);
-  if(t!=null&&t!==src){orig.set(n,{o:src,t});n.nodeValue=t}else orig.delete(n);
+  if(t!=null&&t!==src){orig.set(n,{o:src,t});n.nodeValue=t;mine++}else orig.delete(n);
 }
 function doAttrs(el){
   if(skipped(el))return;
@@ -107,10 +107,22 @@ function walk(root){
   const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT|NodeFilter.SHOW_ELEMENT,{acceptNode:n=>n.nodeType===1&&SKIP.has(n.tagName.toUpperCase())?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
   let n;while((n=w.nextNode())){if(n.nodeType===3)doText(n);else doAttrs(n)}
 }
+// a problem with one node must never leave the rest of the batch (a whole menu built at once) in English: each node on
+// its own, and the first few problems go to the log (boxshelf.log) with the text that caused them
+let errs=0;
+function report(e,n){if(errs++>=5)return;try{const t=n&&(n.nodeType===3?n.nodeValue:n.textContent);const m=`i18n: ${e&&e.message||e} @ ${String(t||"").slice(0,80)}`;console.warn(m);window.boxshelf&&window.boxshelf.log&&window.boxshelf.log(m)}catch{}}
+function walkSafe(root){
+  if(!root)return;
+  if(root.nodeType===3){try{doText(root)}catch(e){report(e,root)}return}
+  if(root.nodeType!==1&&root.nodeType!==9&&root.nodeType!==11)return;
+  if(root.nodeType===1){try{if(skipped(root))return;doAttrs(root)}catch(e){report(e,root)}}
+  const w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT|NodeFilter.SHOW_ELEMENT,{acceptNode:n=>n.nodeType===1&&SKIP.has(n.tagName.toUpperCase())?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
+  let n;while((n=w.nextNode())){try{if(n.nodeType===3)doText(n);else doAttrs(n)}catch(e){report(e,n)}}
+}
 function flush(){
   queued=false;const list=[...pending];pending.clear();
   if(obs)obs.disconnect();
-  try{for(const n of list)if(n.isConnected)walk(n)}finally{if(obs&&dict)observe()}
+  try{for(const n of list){try{if(n.isConnected)walkSafe(n)}catch(e){report(e,n)}}}finally{if(obs&&dict)observe()}
 }
 function queue(n){pending.add(n);if(!queued){queued=true;queueMicrotask(flush)}}
 function observe(){
@@ -137,7 +149,8 @@ function apply(v){
   if(lang!=="en"&&document.documentElement)restore(document.documentElement);
   lang=l;load(l);
   if(document.documentElement)document.documentElement.lang=l==="en"?"en":l;
-  if(dict){if(document.body)walk(document.body);observe()}
+  if(dict){if(document.body)walkSafe(document.body);observe()}
+  try{const m=`i18n: ${l}${dict?` (${dict.size} strings, ${rules.length} patterns)`:""}`;window.boxshelf&&window.boxshelf.log&&window.boxshelf.log(m)}catch{}
   window.dispatchEvent(new CustomEvent("bs-lang",{detail:{lang:l}}));
 }
 
@@ -159,6 +172,18 @@ window.BsI18n={
   t:s=>{const r=tr(String(s==null?"":s));return r==null?s:r},
   languages:()=>[["auto","Automatic (system)"],["en","English"],...Object.keys(window.BS_LOCALES||{}).map(k=>[k,window.BS_LOCALES[k].name||k])],
 };
+
+// safety net: now and then, when the page is idle, anything on screen still in English that the dictionary knows (text
+// that changed in a way the observer didn't report) is translated. Cheap: nodes already done or unknown are a map lookup.
+let sweeps=0,fixed=0;
+function sweep(){
+  if(dict&&document.body&&!document.hidden){const before=countMine();walkSafe(document.body);const got=countMine()-before;
+    if(got>0){fixed+=got;if(sweeps++<3)try{window.boxshelf&&window.boxshelf.log&&window.boxshelf.log(`i18n: sweep translated ${got} missed text(s)`)}catch{}}}
+  schedule();
+}
+const countMine=()=>mine;
+function schedule(){const go=()=>sweep();setTimeout(()=>{if(window.requestIdleCallback)requestIdleCallback(go,{timeout:2000});else go()},2500)}
+schedule();
 
 // start: the last choice at once (so the first frame is already translated), then the saved config
 let first="auto";try{first=localStorage.getItem(LS_KEY)||"auto"}catch{}
