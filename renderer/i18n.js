@@ -11,6 +11,7 @@ const ATTRS=["placeholder","title","aria-label","data-st"]; // data-st: the setu
 const SKIP=new Set(["SCRIPT","STYLE","TEXTAREA","INPUT","SELECT","CODE","PRE","CANVAS","SVG"]);
 let lang="en",dict=null,rules=[],obs=null,pending=new Set(),queued=false;
 const memo=new Map(); // text → its pattern translation (or null): the shelf redraws the same strings over and over
+let upper=null; // the dictionary by its keys in capitals, built the first time an ALL CAPS text comes by
 // node → { o: original English, t: what we put there }: a node whose text is still our own translation is left alone,
 // one the app rewrote is translated again, and switching back to English puts the originals back
 const orig=new WeakMap(),attrOrig=new WeakMap();
@@ -25,7 +26,7 @@ function resolve(v){
 }
 function load(l){
   const L=l!=="en"&&window.BS_LOCALES&&window.BS_LOCALES[l];
-  dict=null;rules=[];memo.clear();if(!L)return;
+  dict=null;rules=[];memo.clear();upper=null;if(!L)return;
   dict=new Map();const s=L.strings||{};
   for(const k in s)if(s[k])dict.set(norm(k),s[k]);
   rules=(L.rules||[]).filter(r=>Array.isArray(r)&&r[0] instanceof RegExp);
@@ -37,7 +38,7 @@ function load(l){
     const src="^"+ks.split(/(\{\d\})/).map(p=>{const m=/^\{(\d)\}$/.exec(p);if(m){order.push(+m[1]);return "(.+?)"}return p.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}).join("")+"$";
     if(!order.length)continue;
     let re;try{re=new RegExp(src)}catch{continue}
-    rules.push([re,(...m)=>{const g={};order.forEach((n,i)=>{const v=m[i+1];g[n]=(dict.get(norm(v))||v)});return to.replace(/\{(\d)\}/g,(_,n)=>g[n]!=null?g[n]:"")}]);
+    rules.push([re,(...m)=>{const g={};order.forEach((n,i)=>{const v=m[i+1],t=tr(v);g[n]=t!=null?t:v});return to.replace(/\{(\d)\}/g,(_,n)=>g[n]!=null?g[n]:"")}]);
   }
   // the most specific (longest literal text) first, so "{0} not found yet" wins over "{0} not found"
   rules.sort((a,b)=>b[0].source.replace(/\(\.\+\?\)/g,"").length-a[0].source.replace(/\(\.\+\?\)/g,"").length);
@@ -47,10 +48,23 @@ function tr(src){
   if(!dict||!src)return null;
   const key=norm(src);if(!key||!/[A-Za-z]/.test(key))return null;
   let hit=dict.get(key);
+  // ALL CAPS on screen ("MAGAZINES", "IN USE"): the dictionary's own words, in capitals too
+  if(hit==null&&key===key.toUpperCase()&&/[A-Z]{3}/.test(key)){
+    if(!upper){upper=new Map();for(const [k,v] of dict)if(!upper.has(k.toUpperCase()))upper.set(k.toUpperCase(),v)}
+    const u=upper.get(key);if(u!=null)hit=u.toLocaleUpperCase("pt-BR");
+  }
   if(hit==null){
     if(memo.has(key))hit=memo.get(key);
     else{
       for(const [re,to] of rules){re.lastIndex=0;const m=re.exec(key);if(m&&m[0]===key){hit=typeof to==="function"?to(...m):key.replace(re,to);break}}
+      // a trail or a list built from pieces ("Library › Switch › Emulator & advanced", "Spectrum · Aero"): each piece
+      // on its own, the separators kept; only when at least one piece is in the dictionary
+      // a comma list ("Action, Adventure, Role-Playing"): only when every item is in the dictionary, so a title with a
+      // comma in it is never half translated
+      if(hit==null&&/, /.test(key)&&key.length<160){const ps=key.split(", "),ts=ps.map(p=>dict.get(p));if(ts.every(t=>t!=null))hit=ts.join(", ")}
+      if(hit==null&&/ [›·|•] /.test(key)){let any=false;
+        const out=key.split(/( [›·|•] )/).map(p=>{if(/^ [›·|•] $/.test(p))return p;const t=tr(p);if(t!=null){any=true;return t}return p}).join("");
+        if(any)hit=out}
       if(memo.size>4000)memo.clear();memo.set(key,hit==null?null:hit);
     }
   }
@@ -126,6 +140,16 @@ function apply(v){
   if(dict){if(document.body)walk(document.body);observe()}
   window.dispatchEvent(new CustomEvent("bs-lang",{detail:{lang:l}}));
 }
+
+// Text drawn on a canvas (the museum's plaques, signs and cards, labels on 3D boxes) goes through fillText / strokeText,
+// and measureText has to agree with what's drawn for the layout to fit: all three see the translated text. A texture
+// already drawn keeps its words until it's drawn again (changing language mid-session repaints the DOM, not the 3D).
+(function(){
+  const C=window.CanvasRenderingContext2D&&CanvasRenderingContext2D.prototype;if(!C)return;
+  const wrap=name=>{const f=C[name];if(typeof f!=="function")return;
+    C[name]=function(text,...rest){if(dict&&typeof text==="string"&&text){const t=tr(text);if(t!=null)text=t}return f.call(this,text,...rest)}};
+  ["fillText","strokeText","measureText"].forEach(wrap);
+})();
 
 window.BsI18n={
   // the setting changed (Settings live preview, or the saved config on start)
