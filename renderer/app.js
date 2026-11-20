@@ -437,6 +437,7 @@ function mount(s){
   slot.classList.add("pk-"+packOf(os)); /* (beta.14) its material on the shelf (style.css): a matte card box, a jewel case's hinge, a keep case's sleeve lip */
   if(isFav(g))slot.classList.add("fav");
   if(g.romm&&g.romm.cloud)slot.classList.add("cloud"); /* (beta.12) a RomM game not on this device yet: Play downloads it */
+  if(g.source==="owned")slot.classList.add("toinstall"); /* a PC game you own but haven't installed: faded, with a download mark; Play installs it */
   slot.querySelectorAll(".spine-band").forEach(band=>{band.style.background=os.spineBand.bg;band.style.color=os.spineBand.fg;band.textContent=g.kind==="emulator"?"EMU":g.kind==="setup"?"ADD":os.spineBand.label});
   slot.querySelectorAll(".spine-title").forEach(t=>t.textContent=g.title);
   // (beta.10) Android: the spine's small copy sized like the front's (thumb), not the 1024 px display copy, on every case made
@@ -1092,7 +1093,7 @@ function fillDetails(){
   $("dCmd").textContent=cmd;$("dCmd").hidden=!cmd;
   const how=$("dHow");if(how){how.textContent=g.kind==="rom"?`Plays in ${s.emulatorName}${s.bootOnLaunch&&!s.useIpl&&((themes[s.id]||{}).boot||s.insertAnim===false)?" after the boot "+((themes[s.id]||{}).boot?"video":"intro"):""}. Close the emulator to come back here.`:"";how.hidden=g.kind!=="rom"}
   raDetails(g);
-  $("dPlay").textContent=g.kind==="rom"||g.kind==="steam"?"Play":"Open";
+  $("dPlay").textContent=g.source==="owned"?"Install":g.kind==="rom"||g.kind==="steam"?"Play":"Open";
   $("dInspect").hidden=g.kind!=="rom";$("dManual").hidden=g.kind!=="rom";$("dManual").querySelector("span").textContent=hasManual(g)?"Read manual":"Read booklet"; /* (beta.7: an icon button: only its label changes) */
   $("dEmu").hidden=!(g.kind==="rom"&&s.hasEmulator);$("dEmu").textContent=`Open ${s.emulatorName||"emulator"}`;
   {const pc=g.kind==="steam"&&!!api.pcCoverOptions,b=$("dBoxArt"),p=$("dBoxArtPc");if(b)b.hidden=!(g.kind==="rom"&&api.artStudio&&g.file);if(p)p.hidden=!pc;} /* (beta.9) a PC game's Box art sits beside Play (it has no manual or Inspect), not in More */{const b=$("dRename");if(b)b.hidden=!(api.renameGame&&((g.kind==="rom"&&g.file)||g.kind==="steam"));} /* (beta.5: PC games too, through the cover picker) */
@@ -3832,6 +3833,7 @@ const HINTS=[
   {act:()=>sysStep(1),pad:["L2","R2"],kbd:["↑","↓"],label:"System",when:notDet},
   {act:()=>flip(),pad:["tri"],kbd:["F"],label:"Flip",when:notDet},
   {act:()=>toggleFav(),pad:["tri"],kbd:["H"],label:"♥ hold",when:notDet},
+  {act:()=>hideGame(curGame()),pad:["sq"],kbd:["X"],label:"Hide",when:notDet}, /* a game off the shelf in one key (X again, or U, undoes it) */
   {act:()=>mode==="details"?closeDetails():openDetails(),pad:["sq"],kbd:["I"],label:"Details",when:notDet},
   {act:()=>play(),pad:["x"],kbd:["Enter"],label:"Play"},
   {act:()=>openInspect(),pad:["R3"],kbd:["V"],label:"Inspect"},
@@ -3858,6 +3860,7 @@ const PAD_HINTS=[
 {act:()=>openDetails(),pad:["⧉"],label:"Details",when:()=>!ANDROID&&notDet()}, /* (beta.12, Windows / Linux: Minus opens Details; Settings is in the quick menu) */
   {act:()=>openMuseum(),pad:["⧉"],label:"",hold:"Museum",when:notDet},
   {act:()=>qmOpen(),pad:["☰"],label:"Menu",when:notDet},
+  {act:()=>hideGame(curGame()),pad:["sq"],label:"",hold:"Hide",when:notDet}, /* X held: the game off the shelf (a tap is still Details, or Undo right after) */
   {act:()=>panelScroll($("details"),1),pad:["R"],label:"Scroll",when:()=>mode==="details"},
   {act:()=>openSort(),pad:["☰"],label:"",hold:"Sort",when:notDet},
   {act:()=>dTab(1),pad:["L1","R1"],label:DV2?"Sections":"Tabs",when:inDet}, // (beta.7)
@@ -3926,13 +3929,13 @@ function renderHints(){pvGuard();bsCtxSoon();
   const h=$("hints");h.innerHTML="";
   (usePad?PAD_HINTS:HINTS).forEach(hn=>{if(hn.when&&!hn.when(rawItem()))return;const b=document.createElement("button");b.type="button";b.className="hint"+(/Letter|Shuffle/.test(hn.label)||hn.lo?" hint-lo":"");
     const keys=(usePad?hn.pad.map(glyph):hn.kbd.map(k=>`<span class="g">${k}</span>`)).join("");
-    const label=hn.label==="Play"&&(es||(g&&g.kind==="setup"))?"Set up":hn.label==="Play"&&g&&(g.kind==="app"||g.kind==="emulator")?"Open":hn.label==="Play"&&g&&g.kind==="random"?(g.pick?"Play":"Pick a game"):hn.label;
+    const label=hn.label==="Play"&&(es||(g&&g.kind==="setup"))?"Set up":hn.label==="Play"&&g&&(g.kind==="app"||g.kind==="emulator")?"Open":hn.label==="Play"&&g&&g.kind==="random"?(g.pick?"Play":"Pick a game"):hn.label==="Play"&&g&&g.source==="owned"?"Install":hn.label;
     const dy=hn.dy?detailsYLab():null,hold=dy?dy[1]:hn.hold,lab=dy?dy[0]:usePad?label:label==="♥ hold"?"♥ Favorite":label.replace(/ hold$/,"");
     b.innerHTML=`<span class="keys">${keys}</span>`+(lab?`<span class="lab"></span>`:"")+(usePad&&hold?`<span class="hold"><i>hold</i> </span>`:"");
     if(lab)b.querySelector(".lab").textContent=lab;if(usePad&&hold)b.querySelector(".hold").append(hold);
     b.addEventListener("click",hn.act);h.appendChild(b)});
 }
-let lastInputAt=0,yAt=0;
+let lastInputAt=0,yAt=0,xAt=0;
 addEventListener("pointerdown",()=>{wake()},true);addEventListener("wheel",()=>{lastInputAt=performance.now()},{capture:true,passive:true});
 let uiBusySent=0;
 function setInput(m){if(m==="kbd"&&touchBack)m=inputMode; /* a touch Back (sent as Esc) keeps the controller / touch prompts */const was=showPad();{const t=performance.now();if(t-uiBusySent>500&&api.uiBusy){uiBusySent=t;try{api.uiBusy()}catch{}}} // background downloads hold off while you're pressing buttons
@@ -4069,6 +4072,7 @@ addEventListener("keydown",e=>{
   else if(k==="v"||k==="V"){if(!e.repeat)openInspect()}
   else if(k==="r"||k==="R"){if(!e.repeat)shuffle()}
   else if(k==="h"||k==="H"){if(!e.repeat&&(mode==="browse"||mode==="details"))toggleFav()}
+  else if(k==="x"||k==="X"){if(!e.repeat&&mode==="browse"){if(undoHide)undoHide();else hideGame(curGame())}} /* right after hiding, X is Undo (as on a controller) */
   else if(k==="m"||k==="M"){if(!e.repeat)openMuseum()}
   else if(k==="o"||k==="O"){if(!e.repeat&&(mode==="browse"||mode==="details"))openEmulator()}
   else if(k==="g"||k==="G"){if(!e.repeat)openSort()}
@@ -4447,7 +4451,11 @@ function pollBody(t){
       if(v&&!prevBtn.v){setInput("pad");sysStep(v)}
       }
       prevBtn.v=!!v;prevBtn.h=!!h;
-      edge(gp,0,()=>{if(!(panel&&padActivate(panel)))primary()});edge(gp,1,()=>back());edge(gp,2,()=>{if(undoHide&&(mode==="browse"||mode==="details")){undoHide();return}mode==="details"?closeDetails():openDetails()}); // X right after hiding a game: Undo
+      edge(gp,0,()=>{if(!(panel&&padActivate(panel)))primary()});edge(gp,1,()=>back());/* X: a tap is Details (or Undo right after hiding a game); held ~half a second on the shelf it hides the game, like Y held favourites */
+      if(B(2)&&!prevBtn[2])xAt=t;
+      if(B(2)&&xAt&&t-xAt>520&&mode==="browse"&&!undoHide){xAt=0;setInput("pad");hideGame(curGame())}
+      if(!B(2)&&prevBtn[2]&&xAt){xAt=0;setInput("pad");if(undoHide&&(mode==="browse"||mode==="details"))undoHide();else mode==="details"?closeDetails():openDetails()}
+      prevBtn[2]=B(2); // X right after hiding a game: Undo
       if(mode==="details"){
         // Y: trailer when there is one (hold for achievements), otherwise achievements, otherwise flip; bumpers flick screenshots
         const hasTr=!$("dTrailer").hidden,hasAch=achReady(); // the row while loading / with no set doesn't count (Y fetched again then)
