@@ -1594,6 +1594,7 @@ strings:{
   "Insert made by Boxshelf from the title's catalogue details": "Encarte feito pelo Boxshelf a partir dos dados do catálogo do título",
   "Inspect": "Inspecionar",
   "Inspect the case": "Inspecionar a caixa",
+  "Install": "Instalar",
   "Install size": "Tamanho instalado",
   "Installed with GOG Galaxy. GOG games have no copy protection: Boxshelf starts it itself; updates stay in GOG Galaxy.": "Instalado com o GOG Galaxy. Jogos da GOG não têm proteção contra cópia: o Boxshelf o inicia diretamente; as atualizações ficam no GOG Galaxy.",
   "Installed with Quiver Launcher. Boxshelf starts it from its own folder; updates stay in Quiver.": "Instalado com o Quiver Launcher. O Boxshelf o inicia a partir da própria pasta; as atualizações ficam no Quiver.",
