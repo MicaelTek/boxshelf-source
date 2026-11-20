@@ -85,8 +85,27 @@ function doText(n){
   if(!dict){if(rec&&cur===rec.t)n.nodeValue=rec.o;return}
   if(!n.parentElement||skipped(n.parentElement))return;
   const t=tr(src);
-  if(t!=null&&t!==src){orig.set(n,{o:src,t});n.nodeValue=t;mine++}else orig.delete(n);
+  if(t!=null&&t!==src){orig.set(n,{o:src,t});n.nodeValue=t;mine++}else{orig.delete(n);if(t==null)machine(n,src)}
 }
+// Game descriptions (free text from the game databases, no dictionary can cover them): main/translate.js translates them
+// once each (Settings → Look → Translate game descriptions) and the answer replaces the text if it's still the same one.
+// The element gets data-mt, which shows a small "machine translated" note under it.
+const MT_SEL="#dDesc";
+const mtAsked=new Map(); // English text → its translation (or null), so a description shown again is instant
+function machine(n,src){
+  const el=n.parentElement,api=window.boxshelf;
+  if(!el||!el.matches||!el.matches(MT_SEL)||!api||typeof api.translateText!=="function")return;
+  const text=src.trim();if(text.length<20)return;
+  const put=t=>{if(!t||lang==="en"||n.nodeValue!==src)return;orig.set(n,{o:src,t});n.nodeValue=t;el.setAttribute("data-mt","");mine++};
+  el.removeAttribute("data-mt");
+  if(mtAsked.has(text)){put(mtAsked.get(text));return}
+  const want=lang;
+  Promise.resolve(api.translateText(text,want)).then(t=>{mtAsked.set(text,t||null);if(lang===want)put(t)}).catch(()=>{});
+}
+// the note under a machine-translated description, in the interface language
+(function(){try{const st=document.createElement("style");
+  st.textContent='#dDesc[data-mt]::after{content:var(--bs-mt-note,"");display:block;margin-top:.5em;font-size:.72em;opacity:.55;letter-spacing:.01em}';
+  (document.head||document.documentElement).appendChild(st)}catch{}})();
 function doAttrs(el){
   if(skipped(el))return;
   let rec=attrOrig.get(el);
@@ -142,9 +161,11 @@ function apply(v){
   try{localStorage.setItem(LS_KEY,v||"auto")}catch{}
   if(l===lang&&(l==="en"||dict))return;
   if(obs)obs.disconnect();
-  if(lang!=="en"&&document.documentElement)restore(document.documentElement);
+  if(lang!=="en"&&document.documentElement){restore(document.documentElement);document.querySelectorAll("[data-mt]").forEach(e=>e.removeAttribute("data-mt"))}
   lang=l;load(l);
-  if(document.documentElement)document.documentElement.lang=l==="en"?"en":l;
+  if(document.documentElement){document.documentElement.lang=l==="en"?"en":l;
+    document.documentElement.style.setProperty("--bs-mt-note",JSON.stringify(tr("Machine translated (Google Translate)")||"Machine translated (Google Translate)"))}
+  mtAsked.clear();
   if(dict){if(document.body)walkSafe(document.body);observe()}
   try{const m=`i18n: ${l}${dict?` (${dict.size} strings, ${rules.length} patterns)`:""}`;window.boxshelf&&window.boxshelf.log&&window.boxshelf.log(m)}catch{}
   window.dispatchEvent(new CustomEvent("bs-lang",{detail:{lang:l}}));

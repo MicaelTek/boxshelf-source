@@ -206,6 +206,8 @@ function build(){
   {g:"Look & sound",id:"display",name:"Display",ic:"display",lead:"How the shelf looks from the couch.",rows:[
     // Interface language (i18n.js translates the screen as it's drawn; locales/<lang>.js holds each language's words)
     C("Language","ui.lang",()=>window.BsI18n?BsI18n.languages():[["auto","Automatic (system)"],["en","English"]],"auto","The language of menus and settings. Automatic follows your system's language. Game titles and box art aren't changed.",{live:v=>{if(window.BsI18n)BsI18n.set(v)},keys:"language idioma lingua portugues portuguese english translation traducao"}),
+    // Details' descriptions in the interface language, machine translated once each (main/translate.js); not for English
+    T("Translate game descriptions","ui.mtDesc",true,"Shows each game's description in your language, translated once by Google Translate and kept on this PC. Only the description text is sent. Off: descriptions stay as the game databases have them.",{keys:"translate translation description summary google machine traduzir sinopse descricao",when:()=>gp("ui.lang")!=="en"&&!(gp("ui.lang")==="auto"&&!/^pt/i.test(navigator.language||""))}),
     C("Interface size","ui.uiScale",[[1,"Standard"],[1.15,"Large"],[1.3,"Extra large"]],1,"Bigger text and buttons for a TV across the room.",{more:"Large suits most 55\" and bigger TVs at 2–3 m. Extra large for very far seating.",live:()=>fit(),keys:"zoom text big small scale"}),
     // (1.78) no peek: the page stays put and takes on the theme's colour at once; the shelf behind switches once you stop on a
     // theme (stepping through them quickly used to fade the page out and in and cross-fade the shelf on every step)
@@ -493,7 +495,7 @@ function regroup(S){
     out.push({g:"",id:"consoles",name:"Library",ic:"games",alias:["pc","custom","apps","library"],badge:(secOf("consoles")||{}).badge,dot:()=>attnList().some(x=>!x.tip)?"warn":null,
       lead:"Your consoles, their emulators and your games: where Boxshelf finds them and what goes on the shelves.",rows:[...rows,mo].filter(Boolean)})}
   // ---- Look ----
-  {const rows=[...all("display","Theme","Keep themes moving while you scroll","Custom themes","Interface size","Language","Clock","Startup animation","Bottom screen","Text size"),
+  {const rows=[...all("display","Theme","Keep themes moving while you scroll","Custom themes","Interface size","Language","Translate game descriptions","Clock","Startup animation","Bottom screen","Text size"),
       H("Motion & effects"),...all("perf","Performance","Reduce motion","Box shine")];
     /* (beta.14) Video previews live in Look now (they were in Box art & media) */
     const pv=secOf("previews");
