@@ -644,7 +644,7 @@ function metaFor(g){
   if(g.kind==="setup")return [`No ${s?s.name+" ":""}games yet`,`${okWord()} opens ${s?s.name:"its"} settings to add a games folder`];
   if(g.kind==="random")return g.pick?["Surprise pick",(g.pick.sh||shelves[g.pick.shelf]).name,rerollWord()]:["Shuffle","Lands on a random game"];
   if(g.kind==="app")return ["Streaming app"];
-  if(g.kind==="steam")return [pcSrcLabel(g),g.minutes?`${(g.minutes/60).toFixed(1)} h played`:g.source==="owned"?"Not installed":"Not played yet"];
+  if(g.kind==="steam")return [pcSrcLabel(g),g.minutes?`${(g.minutes/60).toFixed(1)} h played`:g.source==="owned"?"":"Not played yet"].filter(Boolean);
   const r=raFor(g);
   return [g.region,g.ext&&g.ext.toUpperCase(),fmtSize(g.sizeBytes),g.discs&&g.discs.length>1?`${g.discs.length} discs`:"",hasManual(g)?"Manual":"",r?(r.mastered==="mastered"?"★ Mastered":`★ ${r.earned}/${r.total}`):""].filter(Boolean);
 }
