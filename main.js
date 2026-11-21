@@ -46,6 +46,7 @@ const translate = require('./main/translate'); // Details' descriptions in the i
 const pcgames = require('./main/pcgames'); // (beta.4) Epic, Quiver Launcher and games added by hand
 const pccovers = require('./main/pccovers'); // (beta.5) choosing a PC game's cover (SteamGridDB, Steam's own, your own)
 const pcbulk = require('./main/pcbulk');
+const versions = require('./main/versions');
 const wiiumanual = require('./main/wiiumanual');
 const manualcoll = require('./main/manualcoll');
 const manualstudio = require('./main/manualstudio'); // Manual Studio: every manual for a game side by side, per-game locks, per-console language / region
@@ -2137,6 +2138,10 @@ handle('game:saveDetails', ({ id, info } = {}) => {
   if (Object.keys(cur).length) games[key] = cur; else delete games[key];
   applyCfg({ ...cfg, games }); scanCfg = null;
   return { ok: true, games: cfg.games };
+});
+handle('versions:findDuplicates', async () => {
+  const lib = lastLib || await buildLibrary();
+  return versions.findDuplicates(lib, (cfg.ui && cfg.ui.versions) || []);
 });
 handle('pc:status', async () => { const pc = cfg.pc || {}; let epic = null; try { epic = pcgames.epicGames().length; } catch {}
   // (beta.7) each store's installed games, counted whether its switch is on or not (Settings says what it would add)
