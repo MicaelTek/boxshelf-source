@@ -140,7 +140,19 @@ function plan(lib, found) {
     out.skipped.nothing++;
   }
   out.pc.sort((a, b) => a.title.localeCompare(b.title));
-  return out;
+  const ownedGames = owned(lib, found);
+  const ownedStores = [...new Set(ownedGames.map(x => x.store).filter(Boolean))].sort();
+  const usedCatIds = new Set();
+  for (const g of lib.games) {
+    if (!g || g.Hidden || !Array.isArray(g.CategoryIds)) continue;
+    for (const cid of g.CategoryIds) if (cid) usedCatIds.add(String(cid).toLowerCase());
+  }
+  let categoryCount = 0;
+  for (const c of lib.categories || []) {
+    const id = String((c && (c.Id || c._id)) || '').toLowerCase();
+    if (id && c.Name && usedCatIds.has(id)) categoryCount++;
+  }
+  return { ...out, ownedCount: ownedGames.length, ownedStores, categoryCount };
 }
 
 // Games you own in a store but haven't installed (Settings → Library → PC games → Games you haven't installed): Playnite's
