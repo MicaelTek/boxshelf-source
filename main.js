@@ -1942,7 +1942,7 @@ const pcCoverChanged = (id, part = 'front') => { pcCoverBump(id, part); scanCfg 
 // names often match an unrelated game) and have none chosen yet: the batch cover finder's list
 handle('pccover:missing', () => pcgames.all().filter(g => (g.source === 'custom' || g.source === 'quiver') && !pccovers.cover(g.id)).map(g => ({ id: g.id, title: g.title, source: g.source })));
 handle('pccover:options', ({ id, term, part }) => { const g = pcGameOf(id), t = String(term || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-  return pccovers.options(t ? { id: g.id, title: t, term: true, appid: g.appid } : g, part); }); // (beta.5: term = Search by name, a title instead of the game's own / its Steam app)
+  return pccovers.options(t ? { id: g.id, title: t, term: true } : g, part); }); // (beta.5: term = Search by name, a title instead of the game's own / its Steam app)
 handle('pccover:use', async ({ id, key, part }) => { pcGameOf(id); await pccovers.use(id, key, part); pcCoverChanged(id, part); return { ok: true }; });
 handle('pccover:own', async ({ id, part }) => {
   pcGameOf(id);
@@ -3199,7 +3199,9 @@ function startUp() {
     cutSpine: (file, part) => spineCut(file, 'pc', part),
     igdbCover: async g => {
       const I = igdbInit(); if (!I.client.ready() || !I.coverOf) return null;
-      const r = await I.client.lookup('pc', { title: g.title }); return r && r.hit ? I.coverOf(r.hit) : null;
+      let r = g.term ? null : await I.client.lookup('pc', { title: g.title });
+      if (!(r && r.hit)) r = await I.client.lookup('any', { title: g.title });
+      return r && r.hit ? I.coverOf(r.hit) : null;
     },
     makePart: async (part, g) => {
       const libG = pcGameEntry(g.id), title = (libG && libG.title) || g.title || '';
