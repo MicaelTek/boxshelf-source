@@ -79,9 +79,36 @@ function argsPreview(tpl,rom){return (tpl||"").replace(/\{rom\}/g,rom||"")}
 let lastLib=null;
 function hiddenSet(){const h=cfgInfo&&cfgInfo.config.ui.hidden;return new Set(Array.isArray(h)?h.map(String):[])}
 function versionStacks(){const v=cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.versions;return Array.isArray(v)?v:[]}
+const VER_STORE_PC={steam:"Steam",epic:"Epic",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox PC",battlenet:"Battle.net",quiver:"Quiver",playnite:"Playnite",custom:"PC (Custom)"};
+const VER_STORE_RANK={steam:0,gog:1,epic:2,xbox:3,ea:4,ubisoft:5,battlenet:6};
+function normalizeVerTitle(raw){
+  let s=String(raw||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  if(!s.trim())return "";
+  s=s.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g," ").replace(/^([^,:-]+),\s*(the|an|a)(?=\s*[-:–—]|$)/i,"$2 $1");
+  s=s.replace(/\b(?:ver(?:sion)?\.?\s*\d+(?:\.\d+)*|v\d+(?:\.\d+)*|rev(?:ision)?(?:\.\s*|\s+)[a-z0-9]+|build\s*\d+)\b/g," ");
+  s=s.replace(/[&+]/g," and ").replace(/['’`]/g,"").replace(/[:\-–—_/\\.,!?*~|]+/g," ");
+  s=s.replace(/\b(?:game of the year edition|goty edition|definitive edition|complete edition|ultimate edition|enhanced edition|collector'?s edition|anniversary edition|special edition|director'?s cut|hd remaster|pc port|remastered|remake|recompiled|recomp|decompiled|decomp|edition|goty)\b/g," ");
+  return s.replace(/\s+/g," ").trim().replace(/^(?:the|an|a)\s+/,"").trim();
+}
+function verEditionTag(title){
+  const s=String(title||""),m=s.match(/\b(HD Remaster|Game of the Year Edition|GOTY Edition|GOTY|Definitive Edition|Complete Edition|Ultimate Edition|Enhanced Edition|Collector'?s Edition|Anniversary Edition|Special Edition|Director'?s Cut|Remastered|Remake|Recompiled|Recomp|PC Port|Classic)\b/i);
+  if(m)return m[1].toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()).replace(/\bOf\b/g,"of").replace(/\bThe\b/g,"the").replace(/\bGoty\b/i,"GOTY").replace(/\bHd\b/i,"HD").replace(/\bPc\b/i,"PC");
+  const ym=s.match(/\(((?:19|20)\d{2})\)/);return ym?ym[1]:"";
+}
+function verMemberRank(g){
+  if(!g)return 99;
+  if(g.source==="owned"){const st=String(g.store||"").toLowerCase();return 30+(st in VER_STORE_RANK?VER_STORE_RANK[st]:8)}
+  if(g.kind==="steam"){if(g.source==="custom"||g.source==="quiver")return 10;const st=String(g.source||"steam").toLowerCase();return st in VER_STORE_RANK?VER_STORE_RANK[st]:8}
+  return 20;
+}
 function versionLabelOf(g,shelfName){
   if(!g)return "Version";
-  if(g.kind==="steam")return g.source?pcSrcLabel(g):(shelfName&&!/^(pc|custom)$/i.test(String(shelfName))?`${shelfName} · PC`:"Steam");
+  if(g.kind==="steam"){
+    const ed=verEditionTag(g.title);
+    if(g.source==="owned")return [VER_STORE_PC[g.store]||g.store||"Playnite",ed,"Not installed"].filter(Boolean).join(" · ");
+    const base=(g.source&&(VER_STORE_PC[g.source]||PC_SRC[g.source]))||(shelfName&&!/^(pc|custom)$/i.test(String(shelfName))?`${shelfName} · PC`:"Steam");
+    return [base,ed].filter(Boolean).join(" · ");
+  }
   const sys=String(shelfName||g.system||"ROM").trim(),reg=g.region&&g.region!=="Unknown"?String(g.region).trim():"",revM=String(g.file||g.title||"").match(/\((Rev[ ._-]?[\w.]+|v\d[\w.]*)\)/i),rev=revM?revM[1].replace(/^rev[ ._-]?/i,"Rev "):"";
   return [sys,reg,rev].filter(Boolean).join(" · ")||"ROM";
 }
@@ -89,7 +116,7 @@ function prepare(list){
   const hid=hiddenSet(),rawList=addsShelves(list);
   const byId=new Map();
   for(const s0 of rawList){if(!s0||s0.id==="media")continue;for(const g of (s0.games||[])){if(!g||g.id==null||(g.kind!=="rom"&&g.kind!=="steam"))continue;const id=String(g.id);if(!hid.has(id)&&!byId.has(id))byId.set(id,{g,sh:s0})}}
-  const verMap=new Map(),stackedHide=new Set();
+  const verMap=new Map(),autoKeyMap=new Map(),stackedHide=new Set(),manualIds=new Set();
   for(const st of versionStacks()){
     if(!st||!Array.isArray(st.members))continue;
     const ms=[],seenM=new Set();
@@ -98,12 +125,30 @@ function prepare(list){
     const pri=ms.find(x=>x.m.id===st.primary)||ms[0];
     const ordered=[pri,...ms.filter(x=>x!==pri)];
     verMap.set(String(pri.e.g.id),ordered.map(x=>({id:String(x.e.g.id),label:x.m.label||versionLabelOf(x.e.g,x.e.sh.name),game:x.e.g,shelf:x.e.sh})));
-    for(const x of ms)if(x!==pri)stackedHide.add(String(x.e.g.id));
+    for(const x of ms){manualIds.add(String(x.e.g.id));if(x!==pri)stackedHide.add(String(x.e.g.id))}
+  }
+  if(!(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.autoStack===false)){
+    const skip=new Set(Array.isArray(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.versionsUngrouped)?cfgInfo.config.ui.versionsUngrouped.map(x=>String(x).trim().toLowerCase()):[]);
+    const auto=new Map();
+    for(const [id,e] of byId.entries()){
+      if(manualIds.has(id))continue;
+      const k=normalizeVerTitle(e.g.title);if(!k||k.length<2||skip.has(k))continue;
+      if(!auto.has(k))auto.set(k,[]);auto.get(k).push({id,e});
+    }
+    for(const [k,ms] of auto.entries()){
+      if(ms.length<2)continue;
+      ms.sort((a,b)=>verMemberRank(a.e.g)-verMemberRank(b.e.g)||String(a.e.sh.name||"").localeCompare(String(b.e.sh.name||""))||String(a.e.g.title||"").localeCompare(String(b.e.g.title||"")));
+      const lbls=ms.map(x=>versionLabelOf(x.e.g,x.e.sh.name)),cnt=new Map(),seenL=new Map();
+      for(const l of lbls)cnt.set(l,(cnt.get(l)||0)+1);
+      const vers=ms.map((x,idx)=>{let l=lbls[idx];if((cnt.get(l)||0)>1){const n=(seenL.get(l)||0)+1;seenL.set(l,n);l=`${l} (${n})`}return {id:x.id,label:l,game:x.e.g,shelf:x.e.sh}});
+      verMap.set(ms[0].id,vers);autoKeyMap.set(ms[0].id,k);
+      for(let j=1;j<ms.length;j++)stackedHide.add(ms[j].id);
+    }
   }
   const outById=new Map();
   const out=rawList.map(s0=>{
     const all=s0.games||[],unstacked=stackedHide.size?all.filter(g=>!stackedHide.has(String(g.id))):all;
-    const games=(hid.size?unstacked.filter(g=>!hid.has(String(g.id))):unstacked).map(g=>verMap.has(String(g.id))?{...g,_versions:verMap.get(String(g.id))}:g);
+    const games=(hid.size?unstacked.filter(g=>!hid.has(String(g.id))):unstacked).map(g=>{const id=String(g.id),vs=verMap.get(id),ak=autoKeyMap.get(id);return vs?{...g,_versions:vs,...(ak?{_autoStackKey:ak}:{})}:g});
     const s={...s0,games,_hiddenN:unstacked.length-games.length};
     const items=games.map(g=>{const seed=hash(g.title);return {...g,seed,hue:g.kind==="app"?(APP_HUE[g.appId]||seed%360):seed%360,scene:g.kind==="app"?"media":undefined}});
     if(s.kind==="console"&&s.hasEmulator&&!(cfgInfo&&cfgInfo.config.ui.emuCase===false)){ // ((beta.11) Settings → Shelf → Emulator case off: no "Open <emulator>" case)
@@ -1669,7 +1714,7 @@ async function pickVersion(g){
     const builds=list.map(v=>({value:v}));
     const rows=list.map((v,j)=>{const row=document.createElement("button");row.type="button";row.className="bp-row";
       const n=document.createElement("b");n.textContent=v.label||versionLabelOf(v.game,v.shelf&&v.shelf.name);
-      const d=document.createElement("span");d.textContent=(v.shelf&&v.shelf.name)||"";row.append(n,d);
+      const d=document.createElement("span");d.textContent=v.game&&v.game.source==="owned"?(v.shelf&&v.shelf.id&&v.shelf.id!=="pc"?`${v.shelf.name} · Install`:"Install"):((v.shelf&&v.shelf.name)||"");row.append(n,d);
       row.addEventListener("click",()=>{if(bp){bp.i=j;bpChoose()}});row.addEventListener("pointerenter",()=>{if(bp&&inputMode==="pointer"){bp.i=j;bpRender()}});card.append(row);return row});
     const f=document.createElement("div");f.className="bp-foot";f.textContent=`${btnWord("a")} start · ${btnWord("back")} back`;card.append(f);
     el.append(card);el.addEventListener("click",e=>{if(e.target===el)bpDone(null)});document.body.append(el);
@@ -5157,7 +5202,7 @@ const gameKeyOf=g=>{if(!g)return "";if(g.kind==="rom"){const s=g._sh||shelfFor(g
 (function(){const c=$("dActEnd");if(!c||$("dCols"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dCols";b.textContent="My shelves";b.title="Put this game on shelves of your own (Settings → Library → My shelves makes and names them)";b.addEventListener("click",()=>{const g=curGame();if(!g||!isGame(g)||!window.Setup)return;closeDetails(true);Setup.open({page:"collections",id:g.id,title:g.title})});c.before(b)})();
 // (beta.14, Windows / Linux) Details → ··· → Add to…: the quick menu's Add to… list (Favourites, My shelves, any console shelf)
 (function(){const c=$("dActEnd");if(!c||$("dAddTo")||ANDROID)return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dAddTo";b.hidden=true;b.textContent="Add to…";b.title="Put this game on another shelf too (it stays on its own), on one of My shelves or in Favourites";b.addEventListener("click",()=>addFromDetails());c.before(b)})();
-(function(){const c=$("dActEnd");if(!c||$("dVersions")||ANDROID)return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dVersions";b.hidden=true;b.textContent="Versions / Group…";b.title="Group different versions of this game across PC and consoles under one case";b.addEventListener("click",()=>{const g=curGame();if(!g||!isGame(g)||!(g.kind==="rom"||g.kind==="steam")||!window.Setup)return;const s=g._sh||shelfFor(g);closeDetails(true);play_("panel");Setup.open({page:"gameversions",id:g.id,title:g.title,shelfId:s?s.id:"",label:versionLabelOf(g,s&&s.name)})});c.before(b)})();
+(function(){const c=$("dActEnd");if(!c||$("dVersions")||ANDROID)return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dVersions";b.hidden=true;b.textContent="Versions / Group…";b.title="Group different versions of this game across PC and consoles under one case";b.addEventListener("click",()=>{const g=curGame();if(!g||!isGame(g)||!(g.kind==="rom"||g.kind==="steam")||!window.Setup)return;const s=g._sh||shelfFor(g);closeDetails(true);play_("panel");Setup.open({page:"gameversions",id:g.id,title:g.title,shelfId:s?s.id:"",label:versionLabelOf(g,s&&s.name),autoKey:g._autoStackKey||"",autoVersions:Array.isArray(g._versions)?g._versions.map(v=>({id:v.id,title:(v.game&&v.game.title)||g.title,shelfName:(v.shelf&&v.shelf.name)||"",label:v.label||""})):null})});c.before(b)})();
 // (beta.14, Windows / Linux) Details → Change trailer: where this game's trailer comes from (a page in Settings: the trailers
 // found for it, a YouTube link of your own, or none; main/trailers.js). Shown by dvFill for a console game while previews are on
 (function(){const c=$("dActEnd");if(ANDROID||!c||$("dTrailerPick"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dTrailerPick";b.textContent="Change trailer";b.hidden=true;b.title="Pick this game's trailer: a gameplay clip, an official trailer, a YouTube link of your own, or none";
@@ -5426,7 +5471,7 @@ window.Shelf={
   setFav:(id,on)=>setFavorite(id,on),setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
   // (beta.14) Settings → My shelves → Automatic shelves switched (ui.autoShelves), and the genres / consoles a shelf can fill itself from
   setAutoShelves:o=>{if(!cfgInfo||!o||typeof o!=="object")return;cfgInfo.config.ui.autoShelves=Object.assign({},o);reHome()},autoChoices:()=>autoChoices(),
-  allGamesList:()=>{const src=Array.isArray(lastLib)?lastLib:allShelves,out=[];for(const s of src){if(!s||s.kind==="home"||s.id==="media"||s.col)continue;const gs=Array.isArray(s.games)?s.games:(s._base||s.items||[]);for(const g of gs){if(!g||(g.kind!=="rom"&&g.kind!=="steam"))continue;out.push({id:String(g.id),title:String(g.title||""),shelfId:s.id,shelfName:s.name||s.id,kind:g.kind,source:g.source||"",region:g.region||"",label:versionLabelOf(g,s.name||s.id)})}}return out},
+  allGamesList:()=>{const src=Array.isArray(lastLib)?lastLib:allShelves,out=[];for(const s of src){if(!s||s.kind==="home"||s.id==="media"||s.col)continue;const gs=Array.isArray(s.games)?s.games:(s._base||s.items||[]);for(const g of gs){if(!g||(g.kind!=="rom"&&g.kind!=="steam"))continue;out.push({id:String(g.id),title:String(g.title||""),shelfId:s.id,shelfName:s.name||s.id,kind:g.kind,source:g.source||"",store:g.source==="owned"?(g.store||""):(g.source||""),installed:g.source!=="owned",region:g.region||"",label:versionLabelOf(g,s.name||s.id)})}}return out},
   setVersions:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.versions=list;reshelfWanted=true},
   homeButton:()=>{if(qm.open){qmClose();return "closed"}qmOpen();return qm.open?"opened":"busy"},quickMenuOpen:()=>!!qm.open, // the Thor's Home key while Boxshelf is the Home app
   _mus:{set:(k,v)=>musSetOpt(k,v),style:()=>musStyle(),hist:h=>{HIST=Object.assign({},HIST,h||{})},tv:()=>({ch:tvS.ch,n:tvS.list.length,list:tvS.list.slice(0,4).map(e=>String(e.key).slice(0,12)),i:tvS.i,ads:tvS.ads.length,bad:[...tvS.bad],guide:!!tvS.guide}),games:()=>allShelves.filter(sh=>sh.kind==="console").flatMap(sh=>ownItems(sh).filter(isGame).map(g=>({id:g.id,title:g.title,sys:sh.id})))}, // museum test hooks (the harness can't see these names)
