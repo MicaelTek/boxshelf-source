@@ -1071,7 +1071,7 @@ function fillDetails(){
     if(show){const mins=g.kind==="steam"&&g.minutes?g.minutes:0;const tiles=[["Played",hs&&hs.ms?fmtPlay(hs.ms):mins?`${(mins/60).toFixed(1)} h`:"Not yet"],["Last played",hs&&hs.last?fmtDay(hs.last/1000):"Never"],["Launches",String(hs&&hs.count||0)]];
       tiles.forEach(([k,v])=>{const d=document.createElement("div");d.className="d-stat";const a=document.createElement("span");a.textContent=k;const b=document.createElement("b");b.textContent=v;d.append(a,b);st.append(d)})}}
   // screenshots strip (LaunchBox); the chosen one fills the hero
-  const shots=(g.kind==="rom"&&i.shots)||[];shotSel=0;const ds=$("dShots");ds.innerHTML="";ds.hidden=!shots.length;$("dCover").closest(".d-hero").classList.toggle("shot",!!shots.length);
+  const shots=((g.kind==="rom"||g.kind==="steam")&&i.shots)||[];shotSel=0;const ds=$("dShots");ds.innerHTML="";ds.hidden=!shots.length;$("dCover").closest(".d-hero").classList.toggle("shot",!!shots.length);
   shots.forEach((u,k)=>{const d=document.createElement("button");d.type="button";d.className="d-shot"+(k===0?" on":""); /* (a button: the controller can land on it in Media) */const im=document.createElement("img");im.loading="lazy";im.decoding="async";im.alt="";im.src=u;d.append(im);d.addEventListener("click",()=>{if(mode==="details")openShotView(k);else showShot(k)}) /* (beta.12: full screen; on Android too, with swipes) */;ds.append(d)}); /* (beta.9: decoded off the main thread) */
   if(shots.length)heroBgSoon(shots[0],g); // (beta.9: decoded first, then swapped in: never a half-drawn or hitching backdrop)
   $("dTrailer").hidden=!(g.kind==="rom"&&i.video);
@@ -1117,18 +1117,19 @@ function fillDetails(){
 // title screen, IGDB with keys). The new ones join the end of the strip, so the ones on screen never move; they land only
 // while this game is still in Details, and never while the shelf slides.
 var SHOTS_ASKED=new Set(); // (var: a refill on start-up can come before this line)
-function dShotsMore(g,s,shots){if(!SHOTS_ASKED||ANDROID||!g||g.kind!=="rom"||!api.moreShots||!s||!g.file||shots.length>=6)return;const k=s.id+"|"+g.file;if(SHOTS_ASKED.has(k))return;SHOTS_ASKED.add(k);
-  api.moreShots({systemId:s.id,file:g.file,title:g.title,shots}).then(r=>{const list=Array.isArray(r)?r.filter(u=>typeof u==="string"&&u):[];const now=(g.info&&g.info.shots)||[];if(list.length<=now.length)return;
+function dShotsMore(g,s,shots){if(!SHOTS_ASKED||ANDROID||!g||(g.kind!=="rom"&&g.kind!=="steam")||!api.moreShots||!s||shots.length>=6)return;const pc=g.kind==="steam",f=pc?g.id:g.file;if(!f)return;const sys=pc?"pc":s.id,k=sys+"|"+f;if(SHOTS_ASKED.has(k))return;SHOTS_ASKED.add(k);
+  api.moreShots({systemId:sys,file:f,title:g.title,shots}).then(r=>{const list=Array.isArray(r)?r.filter(u=>typeof u==="string"&&u):[];const now=(g.info&&g.info.shots)||[];if(list.length<=now.length)return;
     if(g.info)g.info.shots=list;else g.info={shots:list};const land=()=>{if(window.BS_BUSY&&BS_BUSY())return void setTimeout(land,300);if((mode==="details"||mode==="shot")&&curGame()===g)dShotsAdd(g)};land()}).catch(()=>{SHOTS_ASKED.delete(k)})}
-// (beta.14) IGDB's game info (main/igdb.js, Windows and Linux, only with the keys): a console game missing a description,
+// (beta.14) IGDB's game info (main/igdb.js, Windows and Linux, only with the keys): a console or PC game missing a description,
 // genres, developer or release date asks main once per run; what comes back only fills gaps (LaunchBox's values stay), and
 // Details is filled again if this game is still in it (never while the shelf slides)
 function igdbOn(){const k=cfgInfo&&cfgInfo.config&&cfgInfo.config.keys;return !!(k&&String(k.igdbId||"").trim()&&String(k.igdbSecret||"").trim())}
 var INFO_ASKED=new Set(); // (var: a refill on start-up can come before this line)
-function dInfoMore(g,s){if(!INFO_ASKED||ANDROID||!g||g.kind!=="rom"||!api.moreInfo||!s||!g.file||!igdbOn())return;const i0=g.info||{},no=v=>v==null||v==="";
-  if(!no(i0.overview)&&!no(i0.genres)&&!no(i0.dev)&&!(no(i0.release)&&no(i0.year)))return;const k=s.id+"|"+g.file;if(INFO_ASKED.has(k))return;INFO_ASKED.add(k);
-  api.moreInfo({systemId:s.id,file:g.file,title:g.title}).then(x=>{if(!x||typeof x!=="object")return;const i=g.info||{},add={};
-    for(const f of ["overview","genres","dev","pub","rating","series"])if(!no(x[f])&&no(i[f]))add[f]=x[f];
+function dInfoMore(g,s){const pc=g&&g.kind==="steam";if(!INFO_ASKED||ANDROID||!g||(g.kind!=="rom"&&!pc)||!api.moreInfo||!s||(!pc&&!igdbOn()))return;const f=pc?g.id:g.file;if(!f)return;const sys=pc?"pc":s.id,i0=g.info||{},no=v=>v==null||v==="";
+  if(!no(i0.overview)&&!no(i0.genres)&&!no(i0.dev)&&!(no(i0.release)&&no(i0.year)))return;const k=sys+"|"+f;if(INFO_ASKED.has(k))return;INFO_ASKED.add(k);
+  api.moreInfo({systemId:sys,file:f,title:g.title}).then(x=>{if(!x||typeof x!=="object")return;const i=g.info||{},add={};
+    for(const fld of ["overview","genres","dev","pub","rating","series","metacritic","bg"])if(!no(x[fld])&&no(i[fld]))add[fld]=x[fld];
+    if(Array.isArray(x.shots)&&x.shots.length&&!(Array.isArray(i.shots)&&i.shots.length))add.shots=x.shots;
     if(x.release&&no(i.release)&&(no(i.year)||String(i.year).slice(0,4)===String(x.year)))add.release=x.release;if(x.year&&no(i.year)&&no(i.release))add.year=x.year;
     if(!Object.keys(add).length)return;g.info=Object.assign({},i,add);
     const land=()=>{if(window.BS_BUSY&&BS_BUSY())return void setTimeout(land,300);if(mode==="details"&&curGame()===g)fillDetails()};land()}).catch(()=>{INFO_ASKED.delete(k)})}
@@ -5163,13 +5164,14 @@ function dvFill(g){const d=$("details");if(!d.classList.contains("dv2")||!g)retu
     $("dMoreBtn").hidden=![...$("dMenu").querySelectorAll("button")].some(b=>!b.hidden)} /* (a tile with nothing more to do: no ···) */
   {const dd=$("dDesc");$("dMore").textContent=dd.classList.contains("clamp")?"More":"Less"}
   // the tabs this game has; another game starts on Overview
-  const show={overview:true,ach:rom&&(!RA.on||raHas(s)),media:rom||g.kind==="steam"||!$("dShots").hidden,copy:rom||g.kind==="steam"};
+  const pc=g.kind==="steam";
+  const show={overview:true,ach:rom&&(!RA.on||raHas(s)),media:rom||pc||!$("dShots").hidden,copy:rom||pc};
   for(const [k] of DV_SECS){const sc=dv.secs[k];if(sc)sc.hidden=!show[k];const t=dv.nav.querySelector(`.dv-t[data-s="${k}"]`);if(t)t.hidden=!show[k]}
   dv.nav.hidden=Object.values(show).filter(Boolean).length<2;
   $("dvAchOff").hidden=!(rom&&!RA.on&&!achLocal(s)); /* (beta.14: Xbox 360 and PS3 need no account: Xenia's and RPCS3's own) */
-  $("dvShotsH").hidden=$("dShots").hidden;$("dvArtBox").hidden=!(rom||g.kind==="steam");
-  $("dvIgdb").hidden=!(rom&&!ANDROID&&((i.shots||[]).length<6)&&!igdbOn()&&!(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.moreShots===false));
-  dvSndPaint();dvFavPaint();dvStatusPaint(g);dvAchPaint(g);if(rom||g.kind==="steam")dvCopy(g);
+  $("dvShotsH").hidden=$("dShots").hidden;$("dvArtBox").hidden=!(rom||pc);
+  $("dvIgdb").hidden=!((rom||pc)&&!ANDROID&&((i.shots||[]).length<6)&&!igdbOn()&&!(cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.moreShots===false));
+  dvSndPaint();dvFavPaint();dvStatusPaint(g);dvAchPaint(g);if(rom||pc)dvCopy(g);
   if(dv.fg!==gid){dv.fg=gid;dv.achF="all";dv.es.clear();dvShow("overview")}else dvShow(show[dv.cur]?dv.cur:"overview");
   $("dvCap").hidden=!(rom||g.kind==="steam");dvCapGlyph(showPad())}
 dvBuild();
