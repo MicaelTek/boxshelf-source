@@ -28,6 +28,17 @@ const STYLE={
   media:{id:"media",rc:0.03,re:0.18,hue:285,ratio:.71,depth:.06,edge:.02,caseColor:"#1a1c24",caseSide:"#0e0f14",spineInk:"#e8e8f0",band:{bg:"#1a1c24",fg:"#9aa3b8",label:"APP"},spineBand:{bg:"#2a2d38",fg:"#c8cede",label:"APP"},tint:["#2a3550","#0a0d16"],glow:"#b9a6ff"}
 };
 const WORDMARKS={home:["Home","Continue & favorites"],gc:["GameCube","Home console"],wii:["Wii","Motion console"],wiiu:["Wii U","Home console"],sw:["Switch","Hybrid console"],sw2:["Switch 2","Hybrid console"],psp:["PSP","Handheld"],ps3:["PS3","Home console"],ps4:["PS4","Home console"],ps5:["PS5","Home console"],x360:["Xbox 360","Home console"],n3ds:["3DS","Handheld"],ps2:["PS2","Home console"],pc:["PC","Steam, Epic & more"],custom:["Custom","PC ports & recomps"],media:["Media","Streaming"]};
+const PC_STORES_META=[
+  {id:"steam",name:"Steam",logo:"logos/steam.png"},
+  {id:"epic",name:"Epic Games",logo:"logos/epic.png"},
+  {id:"gog",name:"GOG",logo:"logos/gog.png"},
+  {id:"xbox",name:"Xbox",logo:"logos/xbox.png"},
+  {id:"ea",name:"EA",logo:"logos/ea.png"},
+  {id:"ubisoft",name:"Ubisoft",logo:"logos/ubisoft.png"},
+  {id:"battlenet",name:"Battle.net",logo:"logos/battlenet.png"},
+  {id:"amazon",name:"Amazon Games",logo:"logos/amazon.png"},
+  {id:"rockstar",name:"Rockstar Games",logo:"logos/rockstar.png"}
+];
 if(window.BS_SYSTEMS_EXTRA){Object.assign(STYLE,BS_SYSTEMS_EXTRA.style||{});Object.assign(WORDMARKS,BS_SYSTEMS_EXTRA.wordmarks||{})} // extra shelves (renderer/systems-extra.js)
 // (beta.14) what a case is made of: systems-extra.js names it (box, jewel, long); the rest are moulded keep cases
 const packOf=s=>s.pack||(s.rc<=.012?(s.depth<.1?"jewel":"box"):"keep");
@@ -1005,7 +1016,35 @@ function updateBg(){
     if(src&&src.then)src.then(blur,()=>blur(frontUrl(g)));else blur(src);
   },ANDROID?620:120); /* Android: once the slide (.55 s) has landed. Two screen-sized layers redrawn and cross-fading under the moving cases cost the Thor frames mid-slide; a held stick now changes the backdrop only when you stop */
 }
-function renderWordmark(el,id,name,base){const w=WORDMARKS[id]||[name,""];el.className=base+"wm wm-"+id;el.innerHTML="";const m=document.createElement("span");m.className="wm-main";m.textContent=w[0];const t=document.createElement("span");t.className="wm-tag";t.textContent=w[1];el.append(m,t)}
+function activePcStores(){
+  const cfg=cfgInfo&&cfgInfo.config,stCfg=cfg&&cfg.steam,pcCfg=cfg&&cfg.pc;
+  const counts=Object.create(null);
+  const pcSh=shelves.find(x=>x&&x.id==="pc")||allShelves.find(x=>x&&x.id==="pc");
+  for(const g of (pcSh&&pcSh.games)||[]){
+    if(!g||g.kind!=="steam")continue;
+    const sid=String(g.source==="owned"?(g.store||""):(g.source||"steam")).toLowerCase();
+    if(sid)counts[sid]=(counts[sid]||0)+1;
+  }
+  return PC_STORES_META.filter(st=>{
+    const on=st.id==="steam"?(!stCfg||stCfg.enabled!==false):(!pcCfg||pcCfg[st.id]!==false);
+    return on||(counts[st.id]||0)>0;
+  }).map(st=>({...st,count:counts[st.id]||0}));
+}
+function renderWordmark(el,id,name,base){const w=WORDMARKS[id]||[name,""];el.className=base+"wm wm-"+id;el.innerHTML="";const m=document.createElement("span");m.className="wm-main";m.textContent=w[0];el.append(m);
+  if(id==="pc"&&/\bsys-word\b/.test(base)){
+    const stores=activePcStores();
+    if(stores.length){
+      const dock=document.createElement("div");dock.className="wm-stores";dock.setAttribute("data-no-i18n","");
+      for(const st of stores){
+        const badge=document.createElement("span");badge.className=`wm-store-badge store-${st.id}${st.count>0?" has-games":""}`;
+        badge.title=st.count?`${st.name} · ${st.count}`:st.name;
+        const im=document.createElement("img");im.src=st.logo;im.alt=st.name;im.decoding="async";
+        badge.appendChild(im);dock.appendChild(badge);
+      }
+      el.append(dock);return;
+    }
+  }
+  const t=document.createElement("span");t.className="wm-tag";t.textContent=w[1];el.append(t)}
 // Logos people drop in are often on a flat white (or black) background. Knock that background out from the edges
 // inward so the logo sits on the shelf like the built-in wordmarks; the result is cached per file.
 const logoCache=new Map();
@@ -1105,10 +1144,24 @@ function renderTabs(){
     shelves.forEach((s,i)=>{const b=document.createElement("button");b.type="button";b.className="tab";const short=ON_ANDROID&&TAB_SHORT[s.id];b.textContent=short||s.name;if(short){b.title=s.name;b.setAttribute("aria-label",s.name)}b.addEventListener("click",()=>{if(tabDragged)return;setInput("pointer");setSystem(i)});box.appendChild(b)})}
   t.querySelectorAll(".tab").forEach((b,i)=>b.classList.toggle("on",i===sysIdx));placePill();
   const s=cur();
-  if(s){renderWordmark($("sysWord"),s.id,s.name,"sys-word ");const n=s.games.length,shown=s.kind==="home"?n:s.items.filter(isGame).length;const what=s.kind==="apps"?(n===1?"app":"apps"):s.kind==="steam"?"installed":(n===1?"game":"games");
+  if(s){renderWordmark($("sysWord"),s.id,s.name,"sys-word ");const n=s.games.length,shown=s.kind==="home"?n:s.items.filter(isGame).length;
+    const isInstalledGame=g=>!!g&&(g.source!=="owned"||(Array.isArray(g._versions)&&g._versions.some(v=>v&&v.game&&v.game.source!=="owned")));
+    const instN=s.kind==="steam"?s.games.filter(isInstalledGame).length:n;
     const pcFilt=s.id==="pc"&&pcFilterActive(),anyFilt=filterBy!=="all"||pcFilt;
     const extra=s.kind==="home"||s.kind==="apps"?"":[filterBy!=="all"?`${filterName(filterBy).toLowerCase()}`:"",pcFilt?pcFilterSummary():"",SORT_WORD[sortBy]].filter(Boolean).join(" · ");
-    $("sysCount").textContent=(anyFilt&&s.kind!=="home"&&s.kind!=="apps"?`${shown} of ${n} ${what}`:`${n} ${what}`)+(extra?" · "+extra:"")}
+    let countText;
+    if(s.kind==="steam"){
+      if(instN<n){
+        const base=anyFilt?`${shown} of ${n} ${n===1?"game":"games"}`:`${n} ${n===1?"game":"games"}`;
+        countText=`${base} · ${instN} installed`;
+      }else{
+        countText=anyFilt?`${shown} of ${n} installed`:`${n} installed`;
+      }
+    }else{
+      const what=s.kind==="apps"?(n===1?"app":"apps"):(n===1?"game":"games");
+      countText=anyFilt&&s.kind!=="home"&&s.kind!=="apps"?`${shown} of ${n} ${what}`:`${n} ${what}`;
+    }
+    $("sysCount").textContent=countText+(extra?" · "+extra:"")}
   else{$("sysCount").textContent="";$("counter").textContent=""}
   applyLogo();renderHints();pcFilterHudSync();
 }

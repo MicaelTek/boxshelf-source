@@ -31,7 +31,7 @@ function defaults() {
     steam: { enabled: true, path: '', hideTools: true },
     // (beta.4) PC games beyond Steam (main/pcgames.js): Epic's installs on the PC shelf; Quiver Launcher's apps and games
     // added by hand ({ id, title, exe, args }) on the Custom shelf. quiverPath: a portable Quiver's folder, chosen or found
-    pc: { epic: true, quiver: true, quiverPath: '', custom: [], gog: true, ubisoft: true, ea: true, xbox: true, groups: [], activeFilters: [], activeInstallFilter: 'all' },
+    pc: { epic: true, quiver: true, quiverPath: '', custom: [], gog: true, ubisoft: true, ea: true, xbox: true, battlenet: true, amazon: true, rockstar: true, groups: [], activeFilters: [], activeInstallFilter: 'all' },
     games: {}, // per-game choices keyed by game id ("<console>:<file>"): { emulator } = this game runs in its own emulator build
     emuSeen: [], // emulator builds used before (newest first): offered for a game a build was made for
     // (beta.7) Set up for me (main/emusetup.js): auto = the first run sets up emulators that look new; graphics = the preset
@@ -271,7 +271,7 @@ function sanitize(cfg) {
   if (isObj(cfg.pc)) { const s = (v, n) => typeof v === 'string' ? v.trim().slice(0, n) : '';
     cfg.pc.custom = (Array.isArray(cfg.pc.custom) ? cfg.pc.custom : []).filter(c => isObj(c) && s(c.exe, 1024)).slice(0, 2000).map(c => ({ id: s(c.id, 80) || s(c.title, 80) || s(c.exe, 80), title: s(c.title, 120), exe: s(c.exe, 1024), args: s(c.args, 1000), ...(s(c.src, 20) ? { src: s(c.src, 20) } : {}), ...(typeof c.shelf === 'string' && /^[a-z0-9_-]{1,24}$/.test(c.shelf) && c.shelf !== 'custom' ? { shelf: c.shelf } : {}) })); // (beta.7: src 'playnite' marks an import, for Remove what was imported; up to 2000 games) (beta.10: shelf 'pc' = on the PC shelf instead of Custom; beta.14: or a console's id, main.js checks it's a known one)
     cfg.pc.pnDirs = isObj(cfg.pc.pnDirs) ? Object.fromEntries(Object.entries(cfg.pc.pnDirs).slice(0, 60).map(([k, v]) => [String(k).slice(0, 20), (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && x.length <= 1024).slice(0, 50)])) : {}; // (the games folders a Playnite import added)
-    cfg.pc.quiverPath = s(cfg.pc.quiverPath, 1024); for (const k of ['epic', 'quiver', 'gog', 'ubisoft', 'ea', 'xbox']) if (typeof cfg.pc[k] !== 'boolean') cfg.pc[k] = true;
+    cfg.pc.quiverPath = s(cfg.pc.quiverPath, 1024); for (const k of ['epic', 'quiver', 'gog', 'ubisoft', 'ea', 'xbox', 'battlenet', 'amazon', 'rockstar']) if (typeof cfg.pc[k] !== 'boolean') cfg.pc[k] = true;
     const cleanArr = (a, max = 30) => [...new Set((Array.isArray(a) ? a : []).map(x => s(x, 60)).filter(Boolean))].slice(0, max);
     cfg.pc.groups = (Array.isArray(cfg.pc.groups) ? cfg.pc.groups : []).filter(g => isObj(g) && s(g.id, 60) && s(g.name, 60)).slice(0, 50).map(g => {
       const kind = g.kind === 'dynamic' ? 'dynamic' : 'manual';

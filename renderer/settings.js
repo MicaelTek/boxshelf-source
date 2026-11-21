@@ -108,7 +108,7 @@ function consoleList(){return info&&info.consoles||[]}
 // the Consoles grid's order: your shelves first, hidden ones after (dimmed); every use of the grid's position goes
 // through this, so a tile and its index always agree
 function tileList(){const L=consoleList();return [...L.filter(c=>sysCfg(c.id).enabled!==false),...L.filter(c=>sysCfg(c.id).enabled===false)]}
-function pcTileEnabled(){const s=cfg&&cfg.steam,p=cfg&&cfg.pc;return !!((!s||s.enabled!==false)||(p&&(p.epic!==false||p.gog!==false||p.ubisoft!==false||p.ea!==false||p.xbox!==false||p.owned===true||(Array.isArray(p.custom)&&p.custom.some(c=>c&&c.shelf==="pc")))))}
+function pcTileEnabled(){const s=cfg&&cfg.steam,p=cfg&&cfg.pc;return !!((!s||s.enabled!==false)||(p&&(p.epic!==false||p.gog!==false||p.ubisoft!==false||p.ea!==false||p.xbox!==false||p.battlenet!==false||p.amazon!==false||p.rockstar!==false||p.owned===true||(Array.isArray(p.custom)&&p.custom.some(c=>c&&c.shelf==="pc")))))}
 function pcTileState(){if(!pcTileEnabled())return "off";const g=gameCount("pc");return g===0?"warn":"ok"}
 function pcTileStatus(){const st=pcTileState(),g=gameCount("pc");if(st==="off")return "Shelf hidden";if(st==="ok")return g!=null?`Ready · ${g} game${g===1?"":"s"}`:"Ready · Stores & Playnite";return "No PC games found"}
 function libTileList(){const L=tileList(),win=!(window.bsPlatform&&bsPlatform.os==="android");return win?[{id:"pc",name:"PC",_pcTile:true,emulatorName:"Steam, Epic & more"},...L]:L}
@@ -202,6 +202,9 @@ function build(){
     T("Show installed Ubisoft games","pc.ubisoft",true,"Adds the games Ubisoft Connect has installed to the PC shelf. They start through Ubisoft Connect, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ubisoft connect uplay store",sub:()=>pcCount("ubisoft")}),
     T("Show installed EA games","pc.ea",true,"Adds the games the EA app has installed to the PC shelf. They start through the EA app, so its sign-in and cloud saves work as usual.",{rescan:true,keys:"ea app origin electronic arts store",sub:()=>pcCount("ea")}),
     T("Show installed Xbox games","pc.xbox",true,"Adds the games the Xbox app has installed (Game Pass included) to the PC shelf. They start like any Xbox app game, signed in with your Microsoft account.",{rescan:true,keys:"xbox game pass microsoft store",sub:()=>pcCount("xbox")}),
+    T("Show Battle.net games","pc.battlenet",true,"Includes Battle.net games from your library on the PC shelf (when connected in Playnite).",{rescan:true,keys:"battlenet battle.net blizzard store"}),
+    T("Show Amazon Games","pc.amazon",true,"Includes Amazon Games from your library on the PC shelf (when connected in Playnite).",{rescan:true,keys:"amazon prime gaming store"}),
+    T("Show Rockstar Games","pc.rockstar",true,"Includes Rockstar Games titles from your library on the PC shelf (when connected in Playnite).",{rescan:true,keys:"rockstar games launcher store"}),
     H("Playnite & custom games"),
     // games owned but not installed, from Playnite's store libraries (main.js ownedRefresh; Play installs them)
     T("Show games you haven't installed","pc.owned",false,"Puts every game you own but haven't installed on the PC shelf, faded with a download mark, from the store libraries you connected in Playnite (Steam, Epic, GOG, EA, Ubisoft, Xbox and more). Play installs it: Steam's own install for Steam games, Playnite for the rest. Needs Playnite installed with its libraries connected.",{rescan:true,keys:"not installed owned library playnite install uninstalled all games biblioteca nao instalados"}),
