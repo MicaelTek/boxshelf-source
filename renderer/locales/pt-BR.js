@@ -60,6 +60,7 @@ rules:[
   [/^Stack these (\d+) versions together under one box\.$/, (_, n) => `Agrupa estas ${n} versões juntas em uma única caixa.`],
   [/^Added (.+) \((.+)\)$/, (_, t, l) => `${t} adicionado (${l})`],
   [/^Stacked (.+) with (.+)$/, (_, l, t) => `${l} agrupado com ${t}`],
+  [/^(.+) · Install$/, (_, s) => `${s} · Instalar`],
 ],
 patterns:{
   "({0} borrow-only or without a usable file were left out)": "({0} apenas para empréstimo ou sem arquivo utilizável foram deixados de fora)",
@@ -3588,5 +3589,9 @@ strings:{
   "Stack": "Agrupar",
   "PC (Custom)": "PC (Personalizado)",
   "Xbox PC": "Xbox PC",
+  "Battle.net": "Battle.net",
+  "Stack same-game versions automatically": "Agrupar versões iguais automaticamente",
+  "Automatically group multiple store copies, editions or platforms of the same game (e.g. Steam and Epic) under one box on the shelf.": "Agrupa automaticamente múltiplas cópias em lojas, edições ou plataformas do mesmo jogo (ex.: Steam e Epic) em uma única caixa na prateleira.",
+  "Auto-grouped across stores/platforms. Change primary box, rename labels, or ungroup.": "Agrupado automaticamente entre lojas/plataformas. Altere a caixa principal, renomeie etiquetas ou desagrupe.",
 }};
 })();
