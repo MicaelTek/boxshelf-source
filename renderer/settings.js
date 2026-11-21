@@ -1469,6 +1469,7 @@ async function pnImport(){const P=ADD.pn;if(!P||ADD.busy)return;ADD.busy=true;co
   try{
     if(ADD.pnOn.pc)for(const g of P.pc){if(!ADD.pnPick.has(g.key)||have.has(String(g.exe).toLowerCase()))continue;const id="pn-"+addSlug(g.key).slice(0,40);
       pc.custom.push({id,title:g.title,exe:g.exe,args:g.args||"",src:"playnite"});have.add(String(g.exe).toLowerCase());n++;if(g.cover)covers.push({id,file:g.cover});
+      if(g.info&&typeof g.info==="object"){cfg.games=cfg.games||{};const gk="custom-"+addSlug(id);if(!(cfg.games[gk]&&cfg.games[gk].info))cfg.games[gk]={...(cfg.games[gk]||{}),info:g.info}}
       if(g.favorite){const fav=cfg.ui.favorites=Array.isArray(cfg.ui.favorites)?cfg.ui.favorites:[];const fid="custom-"+addSlug(id);if(!fav.includes(fid))fav.push(fid)}}
     pc.pnDirs=pc.pnDirs||{};
     for(const [sys,c] of Object.entries(P.consoles||{})){if(!ADD.pnOn[sys]||!cfg.systems[sys])continue;const sc=sysCfg(sys);

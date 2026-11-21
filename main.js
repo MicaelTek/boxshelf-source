@@ -2381,7 +2381,7 @@ function moreShotsBg(lib) {
   for (const sh of lib || []) {
     if (!sh) continue;
     if (sh.kind === 'console') for (const g of sh.games || []) if (g && g.kind === 'rom' && g.file) items.push({ sysId: sh.id, game: g, base: (g.info && g.info.shots) || [] });
-    if (sh.kind === 'steam') for (const g of sh.games || []) if (g && g.kind === 'steam' && g.id) items.push({ sysId: 'pc', game: { file: g.id, title: g.title }, base: (g.info && g.info.shots) || [] });
+    if (sh.kind === 'steam') for (const g of sh.games || []) if (g && g.kind === 'steam' && g.id) items.push({ sysId: 'pc', game: { file: g.id, title: g.title }, base: (g.info && g.info.shots) || [], ...(g.source === 'custom' || g.source === 'quiver' ? { lookupSysId: 'any' } : {}) });
   }
   if (!items.length) return;
   const wait = async () => { await gameIdle(); for (let i = 0; i < 120 && alive() && (coversBusy || artstudio.busy()); i++) await new Promise(r => setTimeout(r, 5000)); await uiQuiet(); await gameIdle(); }; // (the box art run and a restyle go first: they share ScreenScraper's limit)
@@ -2394,11 +2394,27 @@ function moreShotsBg(lib) {
 // screenshots (above) and its info; the answer is kept in userData\igdb-info and asked again after 30 days. Details asks
 // for its game when it opens (info:more); after the screenshots' background pass, the rest are looked up one at a time.
 var igdbMod = null; // (var: the scan can call moreShotsInfo before this line has run)
+const igdbScore = x => (x.summary ? 4 : 0) + (Array.isArray(x.screenshots) && x.screenshots.length ? 3 : 0) + (x.total_rating ? 2 : 0) + (x.first_release_date ? 1 : 0);
 function igdbInit() {
   if (igdbMod) return igdbMod; const I = require('./main/igdb');
   I.init({ dataDir: app.getPath('userData'), log });
-  const client = I.client({ keys: () => { const k = (cfg && cfg.keys) || {}; return { id: k.igdbId, secret: k.igdbSecret }; }, fetch: (u, o) => net.fetch(u, o), match: (list, g) => covers.sgMatch(list, g) });
+  const client = I.client({ keys: () => { const k = (cfg && cfg.keys) || {}; return { id: k.igdbId, secret: k.igdbSecret }; }, fetch: (u, o) => net.fetch(u, o), match: (list, g) => covers.matchTitle(list.map(x => ({ ...x, n: covers.norm(x.name) })), g.title, igdbScore) });
   return (igdbMod = Object.assign({}, I, { client }));
+}
+async function lookupPcIgdb(I, id, title, isCustom) {
+  const item = { file: id, title };
+  if (!isCustom) return { info: await I.lookupInfo(I.client, 'pc', item).catch(() => null), replaced: false };
+  const cached = I.get('pc', item);
+  if (cached && cached.overview && !I.due('pc', item)) return { info: cached, replaced: false };
+  if (!I.client.ready() || (I.client.refused && I.client.refused())) return { info: cached, replaced: false };
+  const alt = await I.client.lookup('any', item).catch(() => null);
+  const ai = alt && alt.hit ? I.infoOf(alt.hit) : null;
+  if (ai) {
+    I.put('pc', item, alt.hit);
+    return { info: ai, replaced: !cached || !cached.overview };
+  }
+  if (I.due('pc', item)) return { info: await I.lookupInfo(I.client, 'pc', item).catch(() => null), replaced: false };
+  return { info: cached, replaced: false };
 }
 let igdbBgRun = null, igdbBgNext = null;
 function igdbInfoBg(lib, wait) {
@@ -2411,9 +2427,12 @@ function igdbInfoBg(lib, wait) {
           for (const g of sh.games || []) {
             if (igdbBgNext || !alive() || !I.client.ready() || I.client.refused()) break; // (keys turned down: the pass stops, nothing asked per game)
             const item = sh.kind === 'steam' ? (g && g.kind === 'steam' && g.id ? { file: g.id, title: g.title } : null) : (g && g.kind === 'rom' && g.file ? g : null);
-            if (!item || !I.gaps(g.info) || !I.due(sysId, item)) continue;
+            const isCustom = sh.kind === 'steam' && (g.source === 'custom' || g.source === 'quiver');
+            if (!item || !I.gaps(g.info) || (!I.due(sysId, item) && !(isCustom && (!g.info || !g.info.overview)))) continue;
             if (wait) await wait(); if (igdbBgNext || !alive()) break;
-            await I.lookupInfo(I.client, sysId, item); n++;
+            if (isCustom) await lookupPcIgdb(I, item.file, item.title, true);
+            else await I.lookupInfo(I.client, sysId, item);
+            n++;
             await new Promise(r => setTimeout(r, 1500));
           }
         }
@@ -2425,28 +2444,23 @@ function igdbInfoBg(lib, wait) {
 handle('info:more', async ({ systemId, file, title } = {}) => {
   if (systemId === 'pc') {
     const id = String(file || ''), pc = pcgames.byId(id), t = String(title || (pc && pc.title) || '');
+    const isCustom = !!(pc && (pc.source === 'custom' || pc.source === 'quiver'));
     let sid = pcSteamIdOf(id, t);
-    if (!sid && t && cfg.ui.autoCovers !== false) {
+    if (!sid && !isCustom && t && cfg.ui.autoCovers !== false) {
       try { const hits = await pcgames.steamSearch(t, true); if (hits && hits[0]) sid = hits[0].id; } catch {}
     }
     const sInfo = sid ? await steamart.fetchInfoOne(sid).catch(() => null) : null;
     const I = igdbInit();
-    const iInfo = I.client.ready() ? await I.lookupInfo(I.client, 'pc', { file: id, title: t }).catch(() => null) : null;
+    const { info: iInfo, replaced } = I.client.ready() ? await lookupPcIgdb(I, id, t, isCustom) : { info: null, replaced: false };
     const out = { ...(sInfo || {}) };
     if (iInfo) {
-      for (const [k, v] of Object.entries(iInfo)) if ((out[k] == null || out[k] === '' || (Array.isArray(out[k]) && !out[k].length)) && v != null && v !== '') out[k] = v;
+      if (replaced && !sInfo) Object.assign(out, iInfo);
+      else for (const [k, v] of Object.entries(iInfo)) if ((out[k] == null || out[k] === '' || (Array.isArray(out[k]) && !out[k].length)) && v != null && v !== '') out[k] = v;
     }
-    if (pc && (pc.source === 'custom' || pc.source === 'quiver') && !out.overview && I.client.ready()) {
-      const alt = await I.client.lookup('any', { file: id, title: t }).catch(() => null);
-      const ai = alt && alt.hit ? I.infoOf(alt.hit) : null;
-      if (ai) {
-        I.put('pc', { file: id, title: t }, alt.hit);
-        if (!sInfo && (!iInfo || !iInfo.overview)) Object.assign(out, ai);
-        else for (const [k, v] of Object.entries(ai)) if ((out[k] == null || out[k] === '' || (Array.isArray(out[k]) && !out[k].length)) && v != null && v !== '') out[k] = v;
-      }
-    }
-    const fin = applyOwnInfo(out, ownInfo(id));
-    return fin && Object.keys(fin).length ? fin : null;
+    const own = ownInfo(id);
+    const fin = applyOwnInfo(out, own);
+    if (!fin || !Object.keys(fin).length) return null;
+    return (replaced || own) ? { ...fin, _replace: true } : fin;
   }
   const I = igdbInit(); if (!I.client.ready()) return applyOwnInfo(null, ownInfo(systemId + ':' + file));
   const f = gameFile(systemId, file).file, lf = f.toLowerCase();
@@ -2457,18 +2471,19 @@ handle('shots:more', async ({ systemId, file, title, shots } = {}) => {
   const cleanShots = (Array.isArray(shots) ? shots : []).filter(u => typeof u === 'string' && /^(https|bsfile):/.test(u)).slice(0, 8);
   if (systemId === 'pc') {
     const id = String(file || ''), pc = pcgames.byId(id), t = String(title || (pc && pc.title) || ''), M = moreShotsInit();
+    const isCustom = !!(pc && (pc.source === 'custom' || pc.source === 'quiver'));
     let base = cleanShots;
     if (!base.length) {
       let sid = pcSteamIdOf(id, t);
-      if (!sid && t && cfg.ui.autoCovers !== false) {
+      if (!sid && !isCustom && t && cfg.ui.autoCovers !== false) {
         try { const hits = await pcgames.steamSearch(t, true); if (hits && hits[0]) sid = hits[0].id; } catch {}
       }
       if (sid) {
         try { const si = await steamart.fetchInfoOne(sid); if (si && Array.isArray(si.shots)) base = si.shots.filter(u => typeof u === 'string' && /^https:/.test(u)).slice(0, 8); } catch {}
       }
     }
-    let res = await M.topUp('pc', { file: id, title: t }, base);
-    if ((!Array.isArray(res) || res.length < 2) && pc && (pc.source === 'custom' || pc.source === 'quiver')) {
+    let res = await M.topUp('pc', { file: id, title: t }, base, isCustom ? { lookupSysId: 'any' } : {});
+    if ((!Array.isArray(res) || res.length < 2) && isCustom) {
       const res2 = await M.topUp('pc', { file: id, title: t }, Array.isArray(res) ? res : base, { lookupSysId: 'any', only: ['igdb'], force: true });
       if (Array.isArray(res2) && res2.length) res = res2;
     }
