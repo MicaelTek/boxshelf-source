@@ -30,7 +30,7 @@ function ownNames(def, gs) { const G = cfg && cfg.games; if (!G) return gs;
   return gs.map(g => { const o = G[def.id + ':' + g.file]; return o && o.title && o.title !== g.title ? { ...g, fileTitle: g.title, title: o.title } : g; });
 }
 const ownTitle = id => { const o = cfg && cfg.games && cfg.games[String(id)]; return o && o.title ? o.title : ''; }; // (PC games, by id)
-const { scanSteamSafe, steamRoot, isMainSteam, steamAnswers } = require('./main/steam');
+const { scanSteamSafe, steamRoot, isMainSteam, steamAnswers, findArt: steamFindArt } = require('./main/steam');
 const steamart = require('./main/steamart');
 const translate = require('./main/translate'); // Details' descriptions in the interface language (Settings → Look)
 const pcgames = require('./main/pcgames'); // (beta.4) Epic, Quiver Launcher and games added by hand
@@ -720,7 +720,7 @@ async function buildLibrary() {
   if (steamGiven && !isMainSteam(steamGiven) && steamMain === undefined) { steamMain = null; try { const p = await findSteam(); if (p && steamRoot(p) && isMainSteam(steamRoot(p))) { steamMain = p; log('Steam: the folder set is a library; using Steam\'s own folder for the list of libraries'); } } catch {} }
   if (steamUp && cfg.steam.enabled && cfg.steam.path) {
     // Steam's own cached art first, then anything Boxshelf fetched from the Steam store for games Steam has no cover for
-    pcShelf = (await scanSteamSafe(cfg.steam.path, { hideTools: cfg.steam.hideTools !== false, log, mainPath: steamMain || '' })).map(g => { const l = steamart.local(g.appid); return { ...g, ...(ownTitle(g.id) ? { title: ownTitle(g.id), fileTitle: g.title } : {}), info: steamart.gameInfo(g.appid), art: { front: fileUrl(pccovers.cover(g.id) || g.art.front || l.front), hero: fileUrl(g.art.hero || l.hero) } }; }); // (beta.5: a cover chosen in the picker wins)
+    pcShelf = (await scanSteamSafe(cfg.steam.path, { hideTools: cfg.steam.hideTools !== false, log, mainPath: steamMain || '' })).map(g => { const l = steamart.local(g.appid), pcA = pccovers.art(g.id); return { ...g, ...(ownTitle(g.id) ? { title: ownTitle(g.id), fileTitle: g.title } : {}), info: steamart.gameInfo(g.appid), art: { front: fileUrl(pcA.front || g.art.front || l.front), back: fileUrl(pcA.back), spine: fileUrl(pcA.spine), disc: fileUrl(pcA.disc), hero: fileUrl(g.art.hero || l.hero) } }; }); // (beta.5: a cover chosen in the picker wins)
   }
   // (beta.4) Epic's installs join the PC shelf; Quiver Launcher's apps and games added by hand get the Custom shelf. They
   // are PC games with a source (kind 'steam' keeps every shelf feature); covers come from the Steam app their title
@@ -766,7 +766,7 @@ async function buildLibrary() {
   };
   // (Steam art by title only for Epic's store games: a recomp or a program added by hand often shares its name with an
   // unrelated Steam game, "Quarantine" got a puzzle game's cover; they keep the made-up case)
-  const pcGame = g => { const sid = g.source === 'owned' ? (g.appid || pcgames.steamIdOf(g.title)) : STORE_SRC.has(g.source) ? pcgames.steamIdOf(g.title) : null, l = sid ? steamart.local(sid) : {};
+  const pcGame = g => { const sid = g.source === 'owned' ? (g.appid || pcgames.steamIdOf(g.title)) : STORE_SRC.has(g.source) ? pcgames.steamIdOf(g.title) : null, l = sid ? steamart.local(sid) : {}, pcA = pccovers.art(g.id);
     const info = mergeInfo(g.info, sid ? steamart.gameInfo(sid) : null);
     return {
       kind: 'steam', source: g.source,
@@ -776,7 +776,7 @@ async function buildLibrary() {
       ...(g.categories ? { categories: g.categories } : {}),
       ...(g.minutes ? { minutes: g.minutes } : {}),
       ...(g.lastPlayed ? { lastPlayed: g.lastPlayed } : {}),
-      art: { front: fileUrl(pccovers.cover(g.id) || l.front), hero: fileUrl(pcHero(g.id) || l.hero), icon: g.icon || undefined },
+      art: { front: fileUrl(pcA.front || l.front), back: fileUrl(pcA.back), spine: fileUrl(pcA.spine), disc: fileUrl(pcA.disc), hero: fileUrl(pcHero(g.id) || l.hero), icon: g.icon || undefined },
     }; };
   // (beta.10) a game added by hand can be moved to the PC shelf (Settings → Custom games → the game → Shelf); (beta.14) or
   // to any console's shelf (one is made for it if that console has none); an id that isn't a console stays on Custom
@@ -1146,7 +1146,7 @@ async function cropBoth(file) {
 // Spine of a full box wrap, cut in the same hidden image window. Case shapes (front width and spine thickness, both
 // relative to the case's height): DVD-style cases 135x190x14 mm, Wii U 135x190x11, Blu-ray 135x171x12, Switch
 // 105x170x10, PSP 104x180x14, 3DS 136x121x13.5 (wider than tall)
-const CASE = { gc: [.711, .074], wii: [.711, .074], ps2: [.711, .074], x360: [.711, .074], xbox: [.711, .074], wiiu: [.711, .058], ps3: [.789, .07], ps4: [.789, .07], ps5: [.789, .07], sw: [.618, .059], sw2: [.618, .059], psp: [.578, .078], n3ds: [1.127, .112] };
+const CASE = { gc: [.711, .074], wii: [.711, .074], ps2: [.711, .074], x360: [.711, .074], xbox: [.711, .074], wiiu: [.711, .058], ps3: [.789, .07], ps4: [.789, .07], ps5: [.789, .07], sw: [.618, .059], sw2: [.618, .059], psp: [.578, .078], n3ds: [1.127, .112], pc: [.667, .07] };
 async function spineCut(file, sysId, part) { // part 'back' (1.71): the back panel left of the spine, from the same fold search
   const [front, spine] = CASE[sysId] || CASE.gc;
   const r = await helperJob('img-tools.html', async () => { const b = await fs.promises.readFile(file); return { data: new Uint8Array(b.buffer, b.byteOffset, b.length), mode: 'spine', front, spine, part: part === 'back' ? 'back' : 'spine' }; }, 30000, true);
@@ -1423,7 +1423,7 @@ handle('covers:resume', () => ({ ok: autoPause(false) }));
 // scanned yet) gets one drawn from its own pictures and LaunchBox's details (renderer/img-tools.js back()), saved as
 // "<name>-backmade.jpg" beside its art. The scanner uses it only while there's no real back, and the weekly art check
 // keeps looking for a real one. Settings → Box art → "Make backs for games without one" (ui.makeBacks).
-const BACK_BAND = { sw2: ['#e60012', '#fff', 'Nintendo Switch 2'], sw: ['#e60012', '#fff', 'Nintendo Switch'], ps5: ['#f2f4f8', '#111318', 'PS5'], ps4: ['#1d4ed8', '#fff', 'PS4'], ps3: ['#141414', '#fff', 'PS3'], ps2: ['#1d3fb8', '#fff', 'PlayStation 2'], psp: ['#141414', '#fff', 'PSP'], wii: ['#f2f2f2', '#222', 'Wii'], wiiu: ['#1fa3d9', '#fff', 'Wii U'], gc: ['#3b2a7a', '#fff', 'GameCube'], n3ds: ['#cf0a2c', '#fff', 'Nintendo 3DS'], x360: ['#57b52d', '#fff', 'Xbox 360'], xbox: ['#2f8f1f', '#fff', 'Xbox'] };
+const BACK_BAND = { sw2: ['#e60012', '#fff', 'Nintendo Switch 2'], sw: ['#e60012', '#fff', 'Nintendo Switch'], ps5: ['#f2f4f8', '#111318', 'PS5'], ps4: ['#1d4ed8', '#fff', 'PS4'], ps3: ['#141414', '#fff', 'PS3'], ps2: ['#1d3fb8', '#fff', 'PlayStation 2'], psp: ['#141414', '#fff', 'PSP'], wii: ['#f2f2f2', '#222', 'Wii'], wiiu: ['#1fa3d9', '#fff', 'Wii U'], gc: ['#3b2a7a', '#fff', 'GameCube'], n3ds: ['#cf0a2c', '#fff', 'Nintendo 3DS'], x360: ['#57b52d', '#fff', 'Xbox 360'], xbox: ['#2f8f1f', '#fff', 'Xbox'], pc: ['#11141a', '#8fb4d9', 'PC'] };
 let backsBusy = false;
 async function fetchImage(u) {
   const ac = new AbortController(), t = setTimeout(() => ac.abort(), 10000);
@@ -1470,9 +1470,9 @@ async function makeSpines(ids) {
 }
 // The two makers, shared by the background passes above and the Art Studio, which offers a made back and spine for
 // every game as one more choice (ranked after every real scan). A JPEG Buffer, or null.
-async function renderBack(id, title, front) {
+async function renderBack(id, title, front, extraInfo) {
   if (!front || !paths.isFile(front)) return null;
-  const def = CONSOLES.find(c => c.id === id), info = covers.gameInfo(id, title) || {}, band = BACK_BAND[id] || ['#16161b', '#fff', def ? def.name : ''];
+  const def = CONSOLES.find(c => c.id === id), info = Object.assign({}, covers.gameInfo(id, title) || {}, extraInfo || {}), band = BACK_BAND[id] || ['#16161b', '#fff', def ? def.name : ''];
   const shots = []; for (const u of (info.shots || []).slice(0, 3)) { const b = await fetchImage(u); if (b) shots.push(b); }
   const bg = info.bg ? await fetchImage(Array.isArray(info.bg) ? info.bg[0] : info.bg) : null;
   const r = await helperJob('img-tools.html', async () => { const b = await fs.promises.readFile(front); return { mode: 'back', data: new Uint8Array(b.buffer, b.byteOffset, b.length), shots: shots.map(x => new Uint8Array(x.buffer, x.byteOffset, x.length)), bg: bg ? new Uint8Array(bg.buffer, bg.byteOffset, bg.length) : null,
@@ -1481,16 +1481,28 @@ async function renderBack(id, title, front) {
   if (!m) { log('made back', title, r.err || 'nothing made'); return null; }
   return Buffer.from(m[1], 'base64');
 }
-async function renderSpine(id, title, front) {
+async function renderSpine(id, title, front, extraInfo) {
   if (!front || !paths.isFile(front) || !CASE[id]) return null;
-  const def = CONSOLES.find(c => c.id === id), info = covers.gameInfo(id, title) || {}, band = BACK_BAND[id] || ['#16161b', '#fff', def ? def.name : ''];
+  const def = CONSOLES.find(c => c.id === id), info = Object.assign({}, covers.gameInfo(id, title) || {}, extraInfo || {}), band = BACK_BAND[id] || ['#16161b', '#fff', def ? def.name : ''];
   let logo = null;
-  try { const ls = await require('./main/steamgrid').logos({ title, names: covers.lookupNames(title) }, covers.sgMatch); for (const l of ls.slice(0, 2)) { logo = await fetchImage(l.url); if (logo) break; } } catch {}
+  try { const ls = await require('./main/steamgrid').logos({ ...(info.appid ? { appid: info.appid } : {}), title, names: covers.lookupNames(title) }, covers.sgMatch); for (const l of ls.slice(0, 2)) { logo = await fetchImage(l.url); if (logo) break; } } catch {}
   if (!logo && info.logo) logo = await fetchImage(info.logo);
   const r = await helperJob('img-tools.html', async () => { const b = await fs.promises.readFile(front); return { mode: 'madespine', data: new Uint8Array(b.buffer, b.byteOffset, b.length), logo: logo ? new Uint8Array(logo.buffer, logo.byteOffset, logo.length) : null,
-    title, pub: info.pub || '', ratio: CASE[id][1], lightBody: !['ps2', 'ps3', 'ps4', 'psp', 'gc'].includes(id), band: { bg: band[0], fg: band[1], label: band[2] } }; }, 30000, true);
+    title, pub: info.pub || '', ratio: CASE[id][1], lightBody: !['ps2', 'ps3', 'ps4', 'psp', 'gc', 'pc'].includes(id), band: { bg: band[0], fg: band[1], label: band[2] } }; }, 30000, true);
   const m = /^data:image\/jpeg;base64,(.+)$/.exec(String((r.pages || [])[0] || ''));
   if (!m) { log('made spine', title, r.err || 'nothing made'); return null; }
+  return Buffer.from(m[1], 'base64');
+}
+async function renderDisc(id, title, front, extraInfo) {
+  if (!front || !paths.isFile(front)) return null;
+  const def = CONSOLES.find(c => c.id === id), info = Object.assign({}, covers.gameInfo(id, title) || {}, extraInfo || {}), band = BACK_BAND[id] || ['#16161b', '#fff', def ? def.name : ''];
+  let logo = null;
+  try { const ls = await require('./main/steamgrid').logos({ ...(info.appid ? { appid: info.appid } : {}), title, names: covers.lookupNames(title) }, covers.sgMatch); for (const l of ls.slice(0, 2)) { logo = await fetchImage(l.url); if (logo) break; } } catch {}
+  if (!logo && info.logo) logo = await fetchImage(info.logo);
+  const r = await helperJob('img-tools.html', async () => { const b = await fs.promises.readFile(front); return { mode: 'madedisc', data: new Uint8Array(b.buffer, b.byteOffset, b.length), logo: logo ? new Uint8Array(logo.buffer, logo.byteOffset, logo.length) : null,
+    title, band: { bg: band[0], fg: band[1], label: band[2] } }; }, 30000, true);
+  const m = /^data:image\/png;base64,(.+)$/.exec(String((r.pages || [])[0] || ''));
+  if (!m) { log('made disc', title, r.err || 'nothing made'); return null; }
   return Buffer.from(m[1], 'base64');
 }
 artstudio.setMaker({ back: renderBack, spine: renderSpine });
@@ -1996,27 +2008,34 @@ handle('launch:pc', async ({ id }) => { coversForGame(); /* (beta.14) */
   return { ...r, cover: coverWhileStarting(10) };
 });
 // (beta.5) a PC game's cover picker (main/pccovers.js): the page names the game by id and an option by key only
-const pcLookup = id => { id = String(id || ''); const m = /^steam-(\d{1,10})$/.exec(id); if (m) return { id, appid: m[1], title: '' }; const g = pcgames.byId(id); return g ? { id, title: g.title, appid: g.appid || pcgames.steamIdOf(g.title) || undefined, store: g.store || g.source } : null; };
+const pcLookup = id => {
+  id = String(id || '');
+  const findTitle = () => { for (const sh of lastLib || []) if (sh && sh.kind === 'steam') { const e = (sh.games || []).find(x => x && x.id === id); if (e) return e.fileTitle || e.title || ''; } return ''; };
+  const m = /^steam-(\d{1,10})$/.exec(id);
+  if (m) return { id, appid: m[1], title: findTitle() };
+  const g = pcgames.byId(id);
+  return g ? { id, title: g.title, appid: g.appid || pcgames.steamIdOf(g.title) || undefined, store: g.store || g.source } : null;
+};
 const pcGameOf = id => { const g = pcLookup(id); if (!g) throw new Error("That game isn't on the shelf any more."); return g; };
 let pcCoverT = 0; // (beta.9: one shelf refresh for a run of covers, not one per cover)
 // (beta.12) a chosen cover gets a new address each time (the same file name used to give the same bsfile:// address, so
 // a second pick showed the old picture from the cache and the shelf saw nothing new), and the shelf's rescan is a fresh
 // one: a scan already running may have read the covers before this one was saved
-const pcCoverBump = id => { const f = id && pccovers.cover(id); if (f) artBump(f); };
-const pcCoverChanged = id => { pcCoverBump(id); scanCfg = null; clearTimeout(pcCoverT); pcCoverT = setTimeout(() => { if (alive()) win.webContents.send('library:changed', { pcCover: 1 }); }, 700); };
+const pcCoverBump = (id, part = 'front') => { const f = id && pccovers.cover(id, part); if (f) artBump(f); };
+const pcCoverChanged = (id, part = 'front') => { pcCoverBump(id, part); scanCfg = null; clearTimeout(pcCoverT); pcCoverT = setTimeout(() => { if (alive()) win.webContents.send('library:changed', { pcCover: 1 }); }, 700); };
 // (beta.9) the games that never get an automatic cover (Quiver's, and programs added by hand or from Playnite: their
 // names often match an unrelated game) and have none chosen yet: the batch cover finder's list
 handle('pccover:missing', () => pcgames.all().filter(g => (g.source === 'custom' || g.source === 'quiver') && !pccovers.cover(g.id)).map(g => ({ id: g.id, title: g.title, source: g.source })));
-handle('pccover:options', ({ id, term }) => { const g = pcGameOf(id), t = String(term || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-  return pccovers.options(t ? { id: g.id, title: t, term: true } : g); }); // (beta.5: term = Search by name, a title instead of the game's own / its Steam app)
-handle('pccover:use', async ({ id, key }) => { pcGameOf(id); await pccovers.use(id, key); pcCoverChanged(id); return { ok: true }; });
-handle('pccover:own', async ({ id }) => {
+handle('pccover:options', ({ id, term, part }) => { const g = pcGameOf(id), t = String(term || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+  return pccovers.options(t ? { id: g.id, title: t, term: true, appid: g.appid } : g, part); }); // (beta.5: term = Search by name, a title instead of the game's own / its Steam app)
+handle('pccover:use', async ({ id, key, part }) => { pcGameOf(id); await pccovers.use(id, key, part); pcCoverChanged(id, part); return { ok: true }; });
+handle('pccover:own', async ({ id, part }) => {
   pcGameOf(id);
-  const r = await openDialog(alive() ? win : undefined, { title: 'Choose a cover', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] });
+  const r = await openDialog(alive() ? win : undefined, { title: 'Choose a picture', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png', 'webp'] }] });
   if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true };
-  await pccovers.own(id, r.filePaths[0]); pcCoverChanged(id); return { ok: true };
+  await pccovers.own(id, r.filePaths[0], part); pcCoverChanged(id, part); return { ok: true };
 });
-handle('pccover:reset', ({ id }) => { pcGameOf(id); pccovers.reset(id); pcCoverChanged(); return { ok: true }; });
+handle('pccover:reset', ({ id, part }) => { pcGameOf(id); const old = pccovers.cover(id, part); pccovers.reset(id, part); if (old) artBump(old); pcCoverChanged(id, part); return { ok: true }; });
 // (beta.5) Details → Rename: a console game by its console and file (it must be one the scanner could find), a PC game by
 // id. An empty name (or the file's own) goes back to the scanned one. The shelf rescans; art and manuals look it up by
 // the new name from then on
@@ -3251,7 +3270,36 @@ function startUp() {
   stremio.init({ log, fanartKey: () => (cfg && cfg.keys && cfg.keys.fanart) || '', artDir: path.join(app.getPath('userData'), 'stremio-art'), fetchBuf: async url => { const r = await net.fetch(url, { signal: AbortSignal.timeout(30000) }); /* (beta.10: a stalled answer gives up) */ if (r.status === 404) return null; if (!r.ok) throw new Error('HTTP ' + r.status); return Buffer.from(await r.arrayBuffer()); } }); // null = really not there; other failures throw, so nothing "missing" is cached for them
   icons.init(app.getPath('userData'), log);
   x360.init(app.getPath('userData'), log); scanSetLog(log); // (beta.10: games folders that can't be read go in the log)
-  steamart.init(app.getPath('userData'), log); translate.init(app.getPath('userData'), log); pcgames.init(app.getPath('userData'), log); pccovers.init({ dataDir: app.getPath('userData'), log, fileUrl, fetchImage, steamgrid: require('./main/steamgrid'), steamCover: id => steamart.local(id).front, match: covers.sgMatch, steamSearch: (t, exact) => pcgames.steamSearch(t, exact) });
+  const steamLocalCover = id => {
+    const f = steamart.local(id).front; if (f && paths.isFile(f)) return f;
+    const sp = steamMain || (cfg && cfg.steam && steamRoot(cfg.steam.path));
+    return sp ? steamFindArt(sp, String(id)).front : null;
+  };
+  const pcGameEntry = id => {
+    for (const sh of lastLib || []) if (sh && sh.kind === 'steam') { const g = (sh.games || []).find(x => x && x.id === id); if (g) return g; }
+    return null;
+  };
+  steamart.init(app.getPath('userData'), log); translate.init(app.getPath('userData'), log); pcgames.init(app.getPath('userData'), log); pccovers.init({
+    dataDir: app.getPath('userData'), log, fileUrl, fetchImage, steamgrid: require('./main/steamgrid'),
+    steamCover: steamLocalCover, match: covers.sgMatch, steamSearch: (t, exact) => pcgames.steamSearch(t, exact),
+    lbCands: (g, part) => covers.candidates('pc', { title: g.title }, part),
+    cutSpine: (file, part) => spineCut(file, 'pc', part),
+    igdbCover: async g => {
+      const I = igdbInit(); if (!I.client.ready() || !I.coverOf) return null;
+      const r = await I.client.lookup('pc', { title: g.title }); return r && r.hit ? I.coverOf(r.hit) : null;
+    },
+    makePart: async (part, g) => {
+      const libG = pcGameEntry(g.id), title = (libG && libG.title) || g.title || '';
+      const sid = g.appid || pcgames.steamIdOf(title);
+      const front = pccovers.cover(g.id, 'front') || (sid ? steamLocalCover(sid) : null);
+      if (!front || !paths.isFile(front)) return null;
+      const extra = Object.assign({}, (libG && libG.info) || {}, sid ? (steamart.gameInfo(sid) || {}) : {}, sid ? { appid: sid } : {});
+      if (part === 'back') { const buf = await renderBack('pc', title, front, extra); return buf ? { buf, ext: 'jpg' } : null; }
+      if (part === 'spine') { const buf = await renderSpine('pc', title, front, extra); return buf ? { buf, ext: 'jpg' } : null; }
+      if (part === 'disc') { const buf = await renderDisc('pc', title, front, extra); return buf ? { buf, ext: 'png' } : null; }
+      return null;
+    }
+  });
   wiiumanual.init(app.getPath('userData'), log);
   ra.init(app.getPath('userData'), log); ra.setCredentials(cfg.ra && cfg.ra.enabled !== false ? cfg.ra.user : '', cfg.ra && cfg.ra.key);
   manuals.init(log); archive.init(log); manuals.setStore(path.join(app.getPath('userData'), 'manual-auto.json')); manuals.setRejectStore(path.join(app.getPath('userData'), 'manual-rejects.json'));
