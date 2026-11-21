@@ -4010,7 +4010,7 @@ const HINTS=[
   {id:"system",act:()=>sysStep(1),pad:["L2","R2"],kbd:["↑","↓"],label:"System",when:notDet},
   {id:"flip",act:()=>flip(),pad:["tri"],kbd:["F"],label:"Flip",when:notDet},
   {id:"fav",act:()=>toggleFav(),pad:["tri"],kbd:["H"],label:"♥ hold",when:notDet},
-  {id:"hide",act:()=>hideGame(curGame()),pad:["sq"],kbd:["X"],label:"Hide",when:notDet}, /* a game off the shelf in one key (X again, or U, undoes it) */
+  {id:"hide",act:()=>hideGame(curGame()),pad:["sq"],kbd:["X"],label:"Hide",when:notDet}, /* a game off the shelf in one key (U or Ctrl+Z undoes it) */
   {id:"details",act:()=>mode==="details"?closeDetails():openDetails(),pad:["sq"],kbd:["I"],label:"Details",when:notDet},
   {id:"play",act:()=>play(),pad:["x"],kbd:["Enter"],label:"Play"},
   {id:"inspect",act:()=>openInspect(),pad:["R3"],kbd:["V"],label:"Inspect"},
@@ -4253,7 +4253,7 @@ addEventListener("keydown",e=>{
   else if(keyMatches(k,"inspect")){if(!e.repeat)openInspect()}
   else if(keyMatches(k,"shuffle")){if(!e.repeat)shuffle()}
   else if(keyMatches(k,"fav")){if(!e.repeat&&(mode==="browse"||mode==="details"))toggleFav()}
-  else if(keyMatches(k,"hide")){if(!e.repeat&&mode==="browse"){if(undoHide)undoHide();else hideGame(curGame())}} /* right after hiding, X is Undo (as on a controller) */
+  else if(keyMatches(k,"hide")){if(!e.repeat&&mode==="browse")hideGame(curGame())} /* always hides focused game; U / Ctrl+Z undoes */
   else if(keyMatches(k,"museum")){if(!e.repeat)openMuseum()}
   else if(k==="o"||k==="O"){if(!e.repeat&&(mode==="browse"||mode==="details"))openEmulator()}
   else if(keyMatches(k,"sort")){if(!e.repeat)openSort()}
@@ -4640,7 +4640,7 @@ function pollBody(t){
       prevBtn.v=!!v;prevBtn.h=!!h;
       edge(gp,0,()=>{if(!(panel&&padActivate(panel)))primary()});edge(gp,1,()=>back());/* X: a tap is Details (or Undo right after hiding a game); held ~half a second on the shelf it hides the game, like Y held favourites */
       if(B(2)&&!prevBtn[2])xAt=t;
-      if(B(2)&&xAt&&t-xAt>520&&mode==="browse"&&!undoHide){xAt=0;setInput("pad");hideGame(curGame())}
+      if(B(2)&&xAt&&t-xAt>520&&mode==="browse"){xAt=0;setInput("pad");hideGame(curGame())}
       if(!B(2)&&prevBtn[2]&&xAt){xAt=0;setInput("pad");if(undoHide&&(mode==="browse"||mode==="details"))undoHide();else mode==="details"?closeDetails():openDetails()}
       prevBtn[2]=B(2); // X right after hiding a game: Undo
       if(mode==="details"){
