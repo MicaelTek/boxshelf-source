@@ -81,7 +81,7 @@ function hiddenSet(){const h=cfgInfo&&cfgInfo.config.ui.hidden;return new Set(Ar
 function versionStacks(){const v=cfgInfo&&cfgInfo.config&&cfgInfo.config.ui&&cfgInfo.config.ui.versions;return Array.isArray(v)?v:[]}
 function versionLabelOf(g,shelfName){
   if(!g)return "Version";
-  if(g.kind==="steam")return (g.source&&PC_SRC[g.source])||(shelfName&&!/^(pc|custom)$/i.test(String(shelfName))?`${shelfName} · PC`:"Steam");
+  if(g.kind==="steam")return g.source?pcSrcLabel(g):(shelfName&&!/^(pc|custom)$/i.test(String(shelfName))?`${shelfName} · PC`:"Steam");
   const sys=String(shelfName||g.system||"ROM").trim(),reg=g.region&&g.region!=="Unknown"?String(g.region).trim():"",revM=String(g.file||g.title||"").match(/\((Rev[ ._-]?[\w.]+|v\d[\w.]*)\)/i),rev=revM?revM[1].replace(/^rev[ ._-]?/i,"Rev "):"";
   return [sys,reg,rev].filter(Boolean).join(" · ")||"ROM";
 }

@@ -22,10 +22,10 @@ function normalizeTitle(raw) {
   s = s.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g, ' ');
   // Normalize No-Intro comma-article form: "Legend of Zelda, The - Ocarina of Time" -> "the legend of zelda ocarina of time"
   s = s.replace(/^([^,:-]+),\s*(the|an|a)(?=\s*[-:–—]|$)/i, '$2 $1');
+  // Strip standalone version tokens (v1.2, ver 2.0, rev a, build 123) before punctuation replacement dissolves dots.
+  s = s.replace(/\b(?:ver(?:sion)?\.?\s*\d+(?:\.\d+)*|v\d+(?:\.\d+)*|rev\.?\s*[a-z0-9]+|build\s*\d+)\b/g, ' ');
   // Unify punctuation and separators.
   s = s.replace(/[&+]/g, ' and ').replace(/['’`]/g, '').replace(/[:\-–—_/\\.,!?*~|]+/g, ' ');
-  // Strip standalone version tokens (v1.2, ver 2.0, rev a, build 123).
-  s = s.replace(/\b(?:ver(?:sion)?\.?\s*\d+(?:\.\d+)*|v\d+(?:\.\d+)*|rev\.?\s*[a-z0-9]+|build\s*\d+)\b/g, ' ');
   // Strip common edition / port / recomp phrases without removing sequel numerals.
   s = s.replace(/\b(?:game of the year edition|goty edition|definitive edition|complete edition|ultimate edition|enhanced edition|collector'?s edition|anniversary edition|special edition|director'?s cut|hd remaster|pc port|remastered|remake|recompiled|recomp|decompiled|decomp|edition|goty)\b/g, ' ');
   s = s.replace(/\s+/g, ' ').trim();
@@ -37,6 +37,7 @@ function normalizeTitle(raw) {
 function versionLabelOf(g, shelfName) {
   if (!g) return 'Version';
   if (g.kind === 'steam') {
+    if (g.source === 'owned') return `${PC_LABELS[g.store] || g.store || 'Playnite'} · Not installed`;
     if (g.source && PC_LABELS[g.source]) return PC_LABELS[g.source];
     return shelfName && !/^(pc|custom)$/i.test(String(shelfName)) ? `${shelfName} · PC` : 'Steam';
   }
