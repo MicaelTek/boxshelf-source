@@ -69,7 +69,7 @@ async function options(game, part = 'front') {
     } catch (e) { o.log('PC cover: Steam store', e.message); }
     if (sgdb) {
       let posters = [];
-      try { posters = await o.steamgrid.posters(game.appid ? { appid: game.appid, title: game.title } : { title: game.title, names: [game.title] }, o.match); } catch (e) { o.log('PC cover: SteamGridDB', e.message); }
+      try { posters = await o.steamgrid.posters(game.appid ? { appid: game.appid, title: game.title } : { title: game.title, names: [game.title], term: !!game.term }, o.match); } catch (e) { o.log('PC cover: SteamGridDB', e.message); }
       const got = await Promise.all(posters.slice(0, 24).map(async (x, i) => ({ x, i, t: await thumb(x.thumbUrl || x.url) })));
       for (const { x, i, t } of got) { if (!t) continue; const k = 'sg' + i; keys[k] = { url: x.url }; list.push({ key: k, thumb: o.fileUrl(t), source: 'steamgriddb', label: x.styleName ? `SteamGridDB · ${x.styleName}` : 'SteamGridDB', sub: x.author ? 'by ' + x.author : '' }); }
     }
@@ -82,7 +82,7 @@ async function options(game, part = 'front') {
   } else {
     if (p === 'disc' && sgdb && o.steamgrid.icons) {
       let icons = [];
-      try { icons = await o.steamgrid.icons(game.appid ? { appid: game.appid, title: game.title } : { title: game.title, names: [game.title] }, o.match); } catch (e) { o.log('PC disc: SteamGridDB', e.message); }
+      try { icons = await o.steamgrid.icons(game.appid ? { appid: game.appid, title: game.title } : { title: game.title, names: [game.title], term: !!game.term }, o.match); } catch (e) { o.log('PC disc: SteamGridDB', e.message); }
       const got = await Promise.all(icons.slice(0, 16).map(async (x, i) => ({ x, i, t: await thumb(x.thumbUrl || x.url) })));
       for (const { x, i, t } of got) { if (!t) continue; const k = 'sg' + i; keys[k] = { url: x.url }; list.push({ key: k, thumb: o.fileUrl(t), source: 'steamgriddb', label: 'SteamGridDB · Icon', sub: x.author ? 'by ' + x.author : '' }); }
     }
