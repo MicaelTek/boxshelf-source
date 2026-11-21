@@ -298,7 +298,9 @@ function sanitize(cfg) {
     });
     const validGroupIds = new Set([...cfg.pc.groups.map(g => g.id), '__favorites', '__uncategorized']);
     cfg.pc.activeFilters = [...new Set((Array.isArray(cfg.pc.activeFilters) ? cfg.pc.activeFilters : []).map(x => s(x, 60)).filter(x => validGroupIds.has(x)))].slice(0, 50);
-    cfg.pc.activeInstallFilter = ['all', 'installed', 'not_installed'].includes(cfg.pc.activeInstallFilter) ? cfg.pc.activeInstallFilter : 'all'; } // (beta.7: the four new stores)
+    cfg.pc.activeInstallFilter = ['all', 'installed', 'not_installed'].includes(cfg.pc.activeInstallFilter) ? cfg.pc.activeInstallFilter : 'all';
+    const validStoreFilters = ['steam', 'epic', 'gog', 'xbox', 'ea', 'ubisoft', 'battlenet', 'amazon', 'rockstar'];
+    cfg.pc.activeStoreFilter = validStoreFilters.includes(cfg.pc.activeStoreFilter) ? cfg.pc.activeStoreFilter : ''; } // (beta.7: the four new stores)
   { const e = isObj(cfg.emuSetup) ? cfg.emuSetup : {}; cfg.emuSetup = { auto: e.auto !== false, graphics: ['auto', 'fast', 'balanced', 'pretty'].includes(e.graphics) ? e.graphics : 'auto', resume: e.resume === true,
     shape: ['auto', 'original', 'wide'].includes(e.shape) ? e.shape : 'auto', sharp: e.sharp === true, crt: e.crt === true, // (beta.14) Set up for me's Picture choices
     pending: [...new Set((Array.isArray(e.pending) ? e.pending : []).filter(x => typeof x === 'string' && x && x.length <= 1024))].slice(0, 40) }; }

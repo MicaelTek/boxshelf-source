@@ -267,8 +267,20 @@ function pcGroupMatches(grp,g){
   if(grp.kind==="dynamic")return (Array.isArray(grp.ids)&&grp.ids.includes(id))||pcRuleMatches(grp.rule,g);
   return Array.isArray(grp.ids)&&grp.ids.includes(id);
 }
+function pcGameStoreOf(g){
+  if(!g||g.kind!=="steam")return "";
+  return String(g.source==="owned"?(g.store||""):(g.source||"steam")).toLowerCase();
+}
+function pcGameHasStore(g,sid){
+  if(!g||g.kind!=="steam"||!sid)return false;
+  if(pcGameStoreOf(g)===sid)return true;
+  if(Array.isArray(g._versions))return g._versions.some(v=>v&&v.game&&pcGameStoreOf(v.game)===sid);
+  return false;
+}
 function pcShelfKeep(g){
   const p=pcCfg();if(!p)return true;
+  const sf=String(p.activeStoreFilter||"").toLowerCase();
+  if(sf&&!pcGameHasStore(g,sf))return false;
   const inst=p.activeInstallFilter||"all";
   if(inst==="installed"&&g.source==="owned")return false;
   if(inst==="not_installed"&&g.source!=="owned")return false;
@@ -279,14 +291,21 @@ function pcShelfKeep(g){
   if(af.includes("__uncategorized")&&!groups.some(gr=>pcGroupMatches(gr,g)))return true;
   return groups.some(gr=>af.includes(gr.id)&&pcGroupMatches(gr,g));
 }
-function pcFilterActive(){const p=pcCfg();return !!(p&&((Array.isArray(p.activeFilters)&&p.activeFilters.length)||(p.activeInstallFilter&&p.activeInstallFilter!=="all")))}
-function pcFilterSummary(){
+function pcFilterActive(){const p=pcCfg();return !!(p&&((Array.isArray(p.activeFilters)&&p.activeFilters.length)||(p.activeInstallFilter&&p.activeInstallFilter!=="all")||p.activeStoreFilter))}
+function pcFilterSummary(opts){
   const tr=s=>(window.BsI18n&&BsI18n.t?BsI18n.t(s):s);
   const p=pcCfg();if(!p)return tr("All");
   const gs=Array.isArray(p.groups)?p.groups:[],af=Array.isArray(p.activeFilters)?p.activeFilters:[];
-  const names=af.map(id=>id==="__favorites"?tr("Favorites"):id==="__uncategorized"?tr("Uncategorized"):((gs.find(g=>g.id===id)||{}).name)).filter(Boolean);
-  if(p.activeInstallFilter==="installed")names.push(tr("Installed"));
-  else if(p.activeInstallFilter==="not_installed")names.push(tr("Not installed"));
+  const names=[];
+  if(p.activeStoreFilter){
+    const st=PC_STORES_META.find(x=>x.id===p.activeStoreFilter);
+    if(st)names.push(st.name);
+  }
+  names.push(...af.map(id=>id==="__favorites"?tr("Favorites"):id==="__uncategorized"?tr("Uncategorized"):((gs.find(g=>g.id===id)||{}).name)).filter(Boolean));
+  if(!(opts&&opts.skipInstall)){
+    if(p.activeInstallFilter==="installed")names.push(tr("Installed"));
+    else if(p.activeInstallFilter==="not_installed")names.push(tr("Not installed"));
+  }
   return names.length?names.join(", "):tr("All");
 }
 function arrange(){
@@ -359,7 +378,7 @@ function pcFilterHudSync(){
   const onPc=!!(cur()&&cur().id==="pc")||mode==="pcfilter";
   b.hidden=!onPc;
   if(!onPc){if(mode==="pcfilter")closePcFilter();return}
-  const p=pcCfg(),n=(p&&Array.isArray(p.activeFilters)?p.activeFilters.length:0)+((p&&p.activeInstallFilter&&p.activeInstallFilter!=="all")?1:0);
+  const p=pcCfg(),n=(p&&Array.isArray(p.activeFilters)?p.activeFilters.length:0)+((p&&p.activeInstallFilter&&p.activeInstallFilter!=="all")?1:0)+(p&&p.activeStoreFilter?1:0);
   b.classList.toggle("on",n>0);
   b.textContent=n?`Categories (${n})`:"Categories";
 }
@@ -398,7 +417,7 @@ function renderPcFilter(){
     ir.append(b);pfEls.push(b);
   });
   const clr=document.createElement("button");clr.type="button";clr.className="pf-act";clr.textContent="Clear filters";clr.disabled=!pcFilterActive();
-  clr.addEventListener("click",()=>{P.activeFilters=[];P.activeInstallFilter="all";play_("tick",{dir:-1});applyArrange();renderPcFilter();pcFilterHudSync();pcFilterSaveSoon()});
+  clr.addEventListener("click",()=>{P.activeFilters=[];P.activeInstallFilter="all";P.activeStoreFilter="";play_("tick",{dir:-1});applyArrange();renderPcFilter();pcFilterHudSync();pcFilterSaveSoon()});
   const mng=document.createElement("button");mng.type="button";mng.className="pf-act primary";mng.textContent="Manage categories…";
   mng.addEventListener("click",()=>{closePcFilter();Setup.open({page:"pc-edit"})});
   ft.append(clr,mng);pfEls.push(clr,mng);
@@ -1018,28 +1037,64 @@ function updateBg(){
 }
 function activePcStores(){
   const cfg=cfgInfo&&cfgInfo.config,stCfg=cfg&&cfg.steam,pcCfg=cfg&&cfg.pc;
+  const curStore=String((pcCfg&&pcCfg.activeStoreFilter)||"").toLowerCase();
   const counts=Object.create(null);
   const pcSh=shelves.find(x=>x&&x.id==="pc")||allShelves.find(x=>x&&x.id==="pc");
-  for(const g of (pcSh&&pcSh.games)||[]){
+  for(const g of (pcSh&&(pcSh._base||pcSh.games))||[]){
     if(!g||g.kind!=="steam")continue;
-    const sid=String(g.source==="owned"?(g.store||""):(g.source||"steam")).toLowerCase();
-    if(sid)counts[sid]=(counts[sid]||0)+1;
+    for(const st of PC_STORES_META){
+      if(pcGameHasStore(g,st.id))counts[st.id]=(counts[st.id]||0)+1;
+    }
   }
   return PC_STORES_META.filter(st=>{
     const on=st.id==="steam"?(!stCfg||stCfg.enabled!==false):(!pcCfg||pcCfg[st.id]!==false);
-    return on||(counts[st.id]||0)>0;
+    return on||(counts[st.id]||0)>0||curStore===st.id;
   }).map(st=>({...st,count:counts[st.id]||0}));
+}
+function togglePcStoreFilter(st){
+  if(!st||!st.id||sysBusy())return;
+  if(cfgInfo&&cfgInfo.config&&!cfgInfo.config.pc)cfgInfo.config.pc={groups:[],activeFilters:[],activeInstallFilter:"all",activeStoreFilter:""};
+  const P=(cfgInfo&&cfgInfo.config&&cfgInfo.config.pc)||pcCfg();if(!P)return;
+  const curStore=String(P.activeStoreFilter||"").toLowerCase();
+  if(curStore===st.id){
+    P.activeStoreFilter="";
+    play_("tick",{dir:-1});applyArrange();if(mode==="pcfilter")renderPcFilter();pcFilterHudSync();pcFilterSaveSoon();
+    return;
+  }
+  if(!st.count){
+    play_("error");toast(`No ${st.name} games in your library`);
+    return;
+  }
+  const pcSh=shelves.find(x=>x&&x.id==="pc")||allShelves.find(x=>x&&x.id==="pc");
+  const baseGames=((pcSh&&(pcSh._base||pcSh.games))||[]).filter(isGame);
+  const keep=filterFn(filterBy),prev=P.activeStoreFilter||"";
+  P.activeStoreFilter=st.id;
+  const matched=baseGames.filter(g=>keep(g)&&pcShelfKeep(g));
+  if(!matched.length){
+    P.activeStoreFilter=prev;
+    play_("error");toast(`No ${st.name} games match the current filter`);
+    return;
+  }
+  play_("tick",{dir:1});applyArrange();if(mode==="pcfilter")renderPcFilter();pcFilterHudSync();pcFilterSaveSoon();
 }
 function renderWordmark(el,id,name,base){const w=WORDMARKS[id]||[name,""];el.className=base+"wm wm-"+id;el.innerHTML="";const m=document.createElement("span");m.className="wm-main";m.textContent=w[0];el.append(m);
   if(id==="pc"&&/\bsys-word\b/.test(base)){
     const stores=activePcStores();
     if(stores.length){
-      const dock=document.createElement("div");dock.className="wm-stores";dock.setAttribute("data-no-i18n","");
+      const p=pcCfg(),curStore=String((p&&p.activeStoreFilter)||"").toLowerCase();
+      const dock=document.createElement("div");dock.className="wm-stores"+(curStore?" filtered":"");dock.setAttribute("data-no-i18n","");
+      dock.addEventListener("dragstart",e=>e.preventDefault());
       for(const st of stores){
-        const badge=document.createElement("span");badge.className=`wm-store-badge store-${st.id}${st.count>0?" has-games":""}`;
+        const active=curStore===st.id;
+        const badge=document.createElement("button");badge.type="button";badge.draggable=false;
+        badge.className=`wm-store-badge store-${st.id}${st.count>0?" has-games":""}${active?" active":""}`;
         badge.title=st.count?`${st.name} · ${st.count}`:st.name;
-        const im=document.createElement("img");im.src=st.logo;im.alt=st.name;im.decoding="async";
-        badge.appendChild(im);dock.appendChild(badge);
+        badge.setAttribute("aria-label",badge.title);
+        badge.setAttribute("aria-pressed",active?"true":"false");
+        const im=document.createElement("img");im.src=st.logo;im.alt=st.name;im.decoding="async";im.draggable=false;
+        badge.appendChild(im);
+        badge.addEventListener("click",e=>{e.stopPropagation();setInput("pointer");togglePcStoreFilter(st)});
+        dock.appendChild(badge);
       }
       el.append(dock);return;
     }
@@ -1148,7 +1203,7 @@ function renderTabs(){
     const isInstalledGame=g=>!!g&&(g.source!=="owned"||(Array.isArray(g._versions)&&g._versions.some(v=>v&&v.game&&v.game.source!=="owned")));
     const instN=s.kind==="steam"?s.games.filter(isInstalledGame).length:n;
     const pcFilt=s.id==="pc"&&pcFilterActive(),anyFilt=filterBy!=="all"||pcFilt;
-    const extra=s.kind==="home"||s.kind==="apps"?"":[filterBy!=="all"?`${filterName(filterBy).toLowerCase()}`:"",pcFilt?pcFilterSummary():"",SORT_WORD[sortBy]].filter(Boolean).join(" · ");
+    const extra=s.kind==="home"||s.kind==="apps"?"":[filterBy!=="all"?`${filterName(filterBy).toLowerCase()}`:"",pcFilt?pcFilterSummary({skipInstall:s.kind==="steam"&&instN<n&&!!(pcCfg()&&pcCfg().activeInstallFilter==="installed")}):"",SORT_WORD[sortBy]].filter(Boolean).join(" · ");
     let countText;
     if(s.kind==="steam"){
       if(instN<n){

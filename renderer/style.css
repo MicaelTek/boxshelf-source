@@ -297,13 +297,19 @@ body.aside *,body.aside *::before,body.aside *::after{animation-play-state:pause
 .wm-custom{--wm-grad:linear-gradient(180deg,#fff0e0 15%,#e6955a 100%);--wm-glow:rgba(230,149,90,.4);--wm-tagc:#ecc29c}
 .wm-custom .wm-main{font-family:'IBM Plex Mono',ui-monospace,monospace;font-weight:600;letter-spacing:.12em;font-size:clamp(24px,2.7vw,38px)}
 .wm-pc .wm-main{font-family:'IBM Plex Mono',ui-monospace,monospace;font-weight:700;letter-spacing:.12em;font-size:clamp(24px,2.7vw,38px)}
-.wm-stores{display:inline-flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:2px;padding:5px 10px;border-radius:12px;
+.wm-stores{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:2px;padding:4px 8px;border-radius:12px;
   background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.03));border:1px solid rgba(255,255,255,.15);
-  box-shadow:0 8px 22px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.14);backdrop-filter:blur(10px);max-width:min(36vw,390px)}
-.wm-store-badge{display:inline-flex;align-items:center;justify-content:center;height:20px;opacity:.54;transition:opacity .2s ease,transform .2s ease}
-.wm-store-badge.has-games{opacity:.98;filter:drop-shadow(0 2px 5px rgba(0,0,0,.45))}
-.wm-store-badge:hover{opacity:1;transform:translateY(-1px)}
-.wm-store-badge img{display:block;height:18px;width:auto;max-width:34px;object-fit:contain}
+  box-shadow:0 8px 22px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.14);backdrop-filter:blur(10px);max-width:min(42vw,460px);
+  user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+.wm-store-badge{display:inline-flex;align-items:center;justify-content:center;height:24px;padding:3px 6px;border-radius:7px;border:1px solid transparent;
+  background:transparent;cursor:pointer;opacity:.28;filter:grayscale(.65) brightness(.75);user-select:none;-webkit-user-select:none;-webkit-user-drag:none;
+  transition:opacity .2s ease,transform .2s ease,background .2s ease,border-color .2s ease,filter .2s ease}
+.wm-store-badge.has-games{opacity:.96;filter:drop-shadow(0 2px 5px rgba(0,0,0,.45))}
+.wm-stores.filtered .wm-store-badge:not(.active){opacity:.32}
+.wm-store-badge:hover{opacity:.75}
+.wm-store-badge.has-games:hover,.wm-store-badge.active{opacity:1;transform:translateY(-1px)}
+.wm-store-badge.active{background:rgba(143,195,255,.22);border-color:rgba(143,195,255,.68);filter:drop-shadow(0 0 8px rgba(143,195,255,.45));box-shadow:0 0 12px rgba(143,195,255,.22)}
+.wm-store-badge img{display:block;height:18px;width:auto;max-width:34px;object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none}
 .wm-store-badge.store-battlenet img,.wm-store-badge.store-amazon img{height:17px;max-width:46px}
 .wm-store-badge.store-ubisoft img{height:19px;max-width:26px}
 .wm-media{--wm-grad:linear-gradient(95deg,#efe6ff 0%,#a98bff 90%);--wm-glow:rgba(169,139,255,.45);--wm-tagc:#c9b8ff}
