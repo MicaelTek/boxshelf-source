@@ -768,8 +768,8 @@ const pcEdOpenVirtual={__favorites:false,__uncategorized:false};
 const pcCatRowsCache=new Map();
 function pcEdit(){if(!pcEditCache&&window.Shelf&&Shelf.pcEditList)try{pcEditCache=Shelf.pcEditList()||[]}catch{pcEditCache=[]}return pcEditCache||[]}
 const PC_SRC={steam:"Steam",epic:"Epic Games",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox",owned:"Not installed",quiver:"Quiver",custom:"Custom",battlenet:"Battle.net",other:"Playnite"};
-function pcCfg(){cfg.pc=cfg.pc||{};if(!Array.isArray(cfg.pc.groups))cfg.pc.groups=[];if(!Array.isArray(cfg.pc.activeFilters))cfg.pc.activeFilters=[];return cfg.pc}
-function pcGroups(){return pcCfg().groups}
+function pcCatCfg(){cfg.pc=cfg.pc||{};if(!Array.isArray(cfg.pc.groups))cfg.pc.groups=[];if(!Array.isArray(cfg.pc.activeFilters))cfg.pc.activeFilters=[];return cfg.pc}
+function pcGroups(){return pcCatCfg().groups}
 function pcEdNotify(){scheduleSave();shelf("pcGroupsChanged")}
 function pcEdRuleMatch(rule,g){
   if(!rule||typeof rule!=="object")return false;
@@ -821,7 +821,7 @@ async function pcCatImport(kind){
   toast(kind==="steam"?"Reading Steam collections…":"Reading Playnite categories…");
   try{
     const r=await fn();if(!r)return;
-    pcCfg().groups=Array.isArray(r.groups)?r.groups:pcGroups();
+    pcCatCfg().groups=Array.isArray(r.groups)?r.groups:pcGroups();
     if(Array.isArray(r.favorites))cfg.ui.favorites=r.favorites;
     pcEditCache=null;await shelf("pcGroupsChanged");bump();
     toast(kind==="steam"?`Imported ${(r.added||0)+(r.updated||0)} Steam collection${(r.added||0)+(r.updated||0)===1?"":"s"}`:`Imported ${(r.added||0)+(r.updated||0)} Playnite categor${(r.added||0)+(r.updated||0)===1?"y":"ies"}`);
@@ -946,7 +946,7 @@ function pcCatEditRows(){
   const delBtn=A("Delete this category","Delete","Removes this category (games stay on the PC shelf). Press twice.",()=>{
     if(delBtn.armed){
       const gs=pcGroups(),i=gs.findIndex(x=>x.id===grp.id);if(i>=0)gs.splice(i,1);
-      pcCfg().activeFilters=pcCfg().activeFilters.filter(x=>x!==grp.id);
+      pcCatCfg().activeFilters=pcCatCfg().activeFilters.filter(x=>x!==grp.id);
       pcEdNotify();play("back");toast(`${grp.name} deleted`);leaveSub();render();
     }else{
       delBtn.armed=true;delBtn.btn="Press again";setTimeout(()=>{delBtn.armed=false;delBtn.btn="Delete";bump()},4000);bump();
