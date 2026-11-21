@@ -12,6 +12,7 @@ wum.onModel(async job => {
     if (job.mode === 'cart') { const r = cart(bmp, job); bmp.close(); wum.done(r ? null : 'no cartridge made', r ? [r] : []); return; }
     if (job.mode === 'back') { const r = await back(bmp, job); bmp.close(); wum.done(r ? null : 'no back made', r ? [r] : []); return; }
     if (job.mode === 'madespine') { const r = await madeSpine(bmp, job); bmp.close(); wum.done(r ? null : 'no spine made', r ? [r] : []); return; }
+    if (job.mode === 'madedisc') { const r = await madeDisc(bmp, job); bmp.close(); wum.done(r ? null : 'no disc made', r ? [r] : []); return; }
     if (job.mode === 'spine') { const r = spine(bmp, job); bmp.close(); wum.done(r ? null : job.part === 'back' ? 'no back found' : 'no spine found', r ? [r] : []); return; }
     const w = bmp.width, h = bmp.height, half = Math.floor(w / 2), out = [];
     for (const side of ['left', 'right']) {
@@ -186,5 +187,52 @@ function cart(bmp, job) {
   const sh = g.createLinearGradient(lx, ly, lx + lw, ly + lh); sh.addColorStop(0, 'rgba(255,255,255,.16)'); sh.addColorStop(.45, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(0,0,0,.12)');
   g.fillStyle = sh; g.fillRect(lx, ly, lw, lh); g.restore();
   rr(lx, ly, lw, lh, lr); g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = W * .006; g.stroke();
+  return c.toDataURL('image/png');
+}
+
+// A circular disc label made from a game's front cover and logo (used for PC games when no disc scan is on file).
+async function madeDisc(front, job) {
+  const S = 1024, c = document.createElement('canvas'); c.width = c.height = S; const g = c.getContext('2d'), r = S / 2;
+  let logo = null; try { logo = job.logo ? await createImageBitmap(new Blob([job.logo])) : null; } catch { logo = null; }
+  const band = job.band || { bg: '#11141a', fg: '#8fb4d9', label: 'PC' };
+  g.save();
+  g.beginPath(); g.arc(r, r, r - 8, 0, Math.PI * 2); g.clip();
+  const s = Math.max(S / front.width, S / front.height), dw = front.width * s, dh = front.height * s;
+  g.drawImage(front, (S - dw) / 2, (S - dh) / 2, dw, dh);
+  const ov = g.createRadialGradient(r, r, r * .18, r, r, r);
+  ov.addColorStop(0, 'rgba(10,12,18,.42)'); ov.addColorStop(.55, 'rgba(10,12,18,.12)'); ov.addColorStop(1, 'rgba(0,0,0,.48)');
+  g.fillStyle = ov; g.fillRect(0, 0, S, S);
+  const sh = g.createLinearGradient(0, 0, S, S);
+  sh.addColorStop(0, 'rgba(255,255,255,.18)'); sh.addColorStop(.42, 'rgba(255,255,255,0)'); sh.addColorStop(.58, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(0,0,0,.28)');
+  g.fillStyle = sh; g.fillRect(0, 0, S, S);
+  // Subtle inner polycarbonate ring + band pill near the bottom
+  g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 4;
+  g.beginPath(); g.arc(r, r, r * .23, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.arc(r, r, r - 10, 0, Math.PI * 2); g.stroke();
+  if (logo) {
+    const mw = S * .54, mh = S * .19, k = Math.min(mw / logo.width, mh / logo.height), lw = logo.width * k, lh = logo.height * k;
+    g.save(); g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 16; g.drawImage(logo, (S - lw) / 2, r * .46 - lh / 2, lw, lh); g.restore();
+    logo.close();
+  } else if (job.title) {
+    const F = 'Segoe UI, Lexend, Arial, sans-serif';
+    g.save(); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
+    g.shadowColor = 'rgba(0,0,0,.85)'; g.shadowBlur = 12;
+    let fs = 46; g.font = `800 ${fs}px ${F}`;
+    const t = String(job.title).trim();
+    while (fs > 22 && g.measureText(t).width > S * .66) { fs -= 2; g.font = `800 ${fs}px ${F}`; }
+    g.fillText(t, r, r * 1.46); g.restore();
+  }
+  if (band.label) {
+    const F = 'Segoe UI, Lexend, Arial, sans-serif';
+    g.save(); g.fillStyle = band.bg; g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 2;
+    g.beginPath(); g.roundRect(r - 46, S * .78, 92, 34, 17); g.fill(); g.stroke();
+    g.fillStyle = band.fg; g.font = `800 18px ${F}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String(band.label).toUpperCase(), r, S * .78 + 18); g.restore();
+  }
+  g.restore();
+  // Clear transparent center hole
+  g.save(); g.globalCompositeOperation = 'destination-out';
+  g.beginPath(); g.arc(r, r, r * .145, 0, Math.PI * 2); g.fill();
+  g.restore();
   return c.toDataURL('image/png');
 }
