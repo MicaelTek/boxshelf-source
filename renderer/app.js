@@ -1280,15 +1280,15 @@ function igdbOn(){const k=cfgInfo&&cfgInfo.config&&cfgInfo.config.keys;return !!
 var INFO_ASKED=new Set(); // (var: a refill on start-up can come before this line)
 function dInfoMore(g,s){const pc=g&&g.kind==="steam";if(!INFO_ASKED||ANDROID||!g||(g.kind!=="rom"&&!pc)||!api.moreInfo||!s||(!pc&&!igdbOn()))return;const f=pc?g.id:g.file;if(!f)return;const sys=pc?"pc":s.id,i0=g.info||{},no=v=>v==null||v==="";
   if(!no(i0.overview)&&!no(i0.genres)&&!no(i0.dev)&&!(no(i0.release)&&no(i0.year)))return;const k=sys+"|"+f;if(INFO_ASKED.has(k))return;INFO_ASKED.add(k);
-  api.moreInfo({systemId:sys,file:f,title:g.title}).then(x=>{if(!x||typeof x!=="object")return;const i=g.info||{},add={};
-    for(const fld of ["overview","genres","dev","pub","rating","series","metacritic","bg"])if(!no(x[fld])&&no(i[fld]))add[fld]=x[fld];
-    if(Array.isArray(x.shots)&&x.shots.length&&!(Array.isArray(i.shots)&&i.shots.length))add.shots=x.shots;
-    if(x.release&&no(i.release)&&(no(i.year)||String(i.year).slice(0,4)===String(x.year)))add.release=x.release;if(x.year&&no(i.year)&&no(i.release))add.year=x.year;
+  api.moreInfo({systemId:sys,file:f,title:g.title}).then(x=>{if(!x||typeof x!=="object")return;const i=g.info||{},add={},rep=!!(x._replace||(pc&&no(i.overview)&&!no(x.overview)));
+    for(const fld of ["overview","genres","dev","pub","rating","series","metacritic","bg"])if(!no(x[fld])&&(rep||no(i[fld])))add[fld]=x[fld];
+    if(Array.isArray(x.shots)&&x.shots.length&&(rep||!(Array.isArray(i.shots)&&i.shots.length)))add.shots=x.shots;
+    if(x.release&&(rep||(no(i.release)&&(no(i.year)||String(i.year).slice(0,4)===String(x.year)))))add.release=x.release;if(x.year&&(rep||(no(i.year)&&no(i.release))))add.year=x.year;
     if(!Object.keys(add).length)return;g.info=Object.assign({},i,add);
     const land=()=>{if(window.BS_BUSY&&BS_BUSY())return void setTimeout(land,300);if(mode==="details"&&curGame()===g)fillDetails()};land()}).catch(()=>{INFO_ASKED.delete(k)})}
 function dShotsAdd(g){const sh=(g.info&&g.info.shots)||[],ds=$("dShots"),n0=ds.children.length;if(sh.length<=n0)return;
   for(let k=n0;k<sh.length;k++){const d=document.createElement("button");d.type="button";d.className="d-shot"+(k===0?" on":"");const im=document.createElement("img");im.loading="lazy";im.decoding="async";im.alt="";im.src=sh[k];d.append(im);d.addEventListener("click",()=>{if(mode==="details")openShotView(k);else showShot(k)});ds.append(d)}
-  ds.hidden=false;$("dCover").closest(".d-hero").classList.add("shot");if(!n0)heroBgSoon(sh[0],g);$("dNoMedia").hidden=true;$("dTabMedia").classList.add("has");{const h=$("dvShotsH");if(h)h.hidden=false}{const q=$("dvIgdb");if(q&&sh.length>=6)q.hidden=true}}
+  ds.hidden=false;$("dCover").closest(".d-hero").classList.add("shot");if(!n0){heroBgSoon(sh[0],g);if(DV2)dvShot(sh[0])}$("dNoMedia").hidden=true;$("dTabMedia").classList.add("has");if(DV2&&dv.secs&&dv.secs.media){dv.secs.media.hidden=false;const t=dv.nav&&dv.nav.querySelector('.dv-t[data-s="media"]');if(t)t.hidden=false;dv.nav.hidden=dvList().length<2}{const h=$("dvShotsH");if(h)h.hidden=false}{const q=$("dvIgdb");if(q&&sh.length>=6)q.hidden=true}}
 function openDetails(){if(mode!=="browse"||!curGame()||emptyShelf())return;uiCrumb("Details: "+curGame().title);
   // (beta.7) the shelf's own preview already playing for this game carries straight on behind Details (no restart)
   {const g=curGame(),k=String(g.id!=null?g.id:g.title);if(PV&&PV.bkey===k&&app.classList.contains("pv-on")){const v=$("pvBack");clearTimeout(PV.bt);PV.bkey="";PV.key=k;PV.r={type:"file",url:v.currentSrc||v.src};app.classList.add("pv-det")}}
@@ -5354,7 +5354,7 @@ function dvAchList(g){const L=$("dvAchList"),F=$("dvAchF"),box=$("dvAchL");if(!L
 function dvFill(g){const d=$("details");if(!d.classList.contains("dv2")||!g)return;const s=shelfFor(g)||{},i=g.info||{},rom=g.kind==="rom",game=rom||g.kind==="steam",gid=String(g.id!=null?g.id:g.title);
   app.style.setProperty("--dv-tint",stOf(g).glow||"#9d8cff");
   // the art behind the case, and the trailer box's poster: fan art first, then a screenshot, then the box's own art
-  const shots=rom&&i.shots||[],art=(rom&&i.bg)||(g.art&&g.art.hero)||shots[0]||frontUrl(g)||"",post=(rom&&i.bg)||shots[0]||(g.art&&g.art.hero)||""; /* (never the cover: the real case is right there) */
+  const shots=game&&i.shots||[],art=(game&&i.bg)||(g.art&&g.art.hero)||shots[0]||frontUrl(g)||"",post=(game&&i.bg)||shots[0]||(g.art&&g.art.hero)||""; /* (never the cover: the real case is right there) */
   const bu=art?thumb(art,360):"";if(dv.back!==bu){dv.back=bu;dvPic(bu,u=>{if(dv.back!==u)return;const im=$("dvBack").firstChild;if(u)im.src=u;else im.removeAttribute("src")})}
   const pu=post?thumb(post,512):"";if(dv.poster!==pu){dv.poster=pu;$("dMediaIn").style.backgroundImage="";dvPic(pu,u=>{if(dv.poster===u)$("dMediaIn").style.backgroundImage=u?dvUrl(u):""})}
   $("dvVid").classList.toggle("dv-empty",!pu);$("dvNone").textContent=$("dTrailer").hidden?"No trailer or screenshots yet":"Trailer";$("dvVid").hidden=!game;
