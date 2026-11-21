@@ -84,6 +84,8 @@ contextBridge.exposeInMainWorld('boxshelf', {
   pcCoverUndoAll: () => call('pccover:undoAll'),
   onPcCoverProgress: fn => ipcRenderer.on('pccover:progress', (e, p) => fn(p)),
   renameGame: o => call('game:rename', o), // (beta.5) { systemId, file } or { id }, and title ('' = back to the file's name)
+  searchGameDetails: o => call('game:searchDetails', o),
+  saveGameDetails: o => call('game:saveDetails', o),
   themes: () => call('themes:list'),
   setTheme: (systemId, kind, file) => call('themes:set', { systemId, kind, file }),
   removeTheme: (systemId, kind) => call('themes:remove', { systemId, kind }),
