@@ -119,9 +119,9 @@ async function run(sysId, game, k, base0, opts) {
   // every source that's set up and due: what it has for this game (lookups only, no pictures yet)
   const cands = [], asked = [];
   for (const src of sources) {
-    if (!ready(src, opts) || !due(e, src, now)) continue;
+    if ((!opts.force && !due(e, src, now)) || !ready(src, opts)) continue;
     if (opts.bg && src.bgLimit != null) bgUsed[src.id] = (bgUsed[src.id] || 0) + 1;
-    let got; try { got = await src.find(sysId, game); } catch (err) { log('More screenshots:', src.id, 'busy', (err && err.message) || ''); continue; } // (asked again next time)
+    let got; try { got = await src.find(opts.lookupSysId || sysId, game); } catch (err) { log('More screenshots:', src.id, 'busy', (err && err.message) || ''); continue; } // (asked again next time)
     asked.push(src.id);
     for (const c of Array.isArray(got) ? got : []) if (c && typeof c.url === 'string' && KIND_RANK[c.kind] != null) cands.push({ url: c.url, kind: c.kind, src });
   }

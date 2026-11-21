@@ -1095,7 +1095,7 @@ function fillDetails(){
   $("dPlay").textContent=g.kind==="rom"||g.kind==="steam"?"Play":"Open";
   $("dInspect").hidden=g.kind!=="rom";$("dManual").hidden=g.kind!=="rom";$("dManual").querySelector("span").textContent=hasManual(g)?"Read manual":"Read booklet"; /* (beta.7: an icon button: only its label changes) */
   $("dEmu").hidden=!(g.kind==="rom"&&s.hasEmulator);$("dEmu").textContent=`Open ${s.emulatorName||"emulator"}`;
-  {const pc=g.kind==="steam"&&!!api.pcCoverOptions,b=$("dBoxArt"),p=$("dBoxArtPc");if(b)b.hidden=!(g.kind==="rom"&&api.artStudio&&g.file);if(p)p.hidden=!pc;} /* (beta.9) a PC game's Box art sits beside Play (it has no manual or Inspect), not in More */{const b=$("dRename");if(b)b.hidden=!(api.renameGame&&((g.kind==="rom"&&g.file)||g.kind==="steam"));} /* (beta.5: PC games too, through the cover picker) */
+  {const pc=g.kind==="steam"&&!!api.pcCoverOptions,b=$("dBoxArt"),p=$("dBoxArtPc");if(b)b.hidden=!(g.kind==="rom"&&api.artStudio&&g.file);if(p)p.hidden=!pc;} /* (beta.9) a PC game's Box art sits beside Play (it has no manual or Inspect), not in More */{const b=$("dRename");if(b)b.hidden=!(api.renameGame&&((g.kind==="rom"&&g.file)||g.kind==="steam"));}{const b=$("dEditDetails");if(b)b.hidden=!(api.saveGameDetails&&((g.kind==="rom"&&g.file)||g.kind==="steam"));} /* (beta.5: PC games too, through the cover picker) */
   {const b=$("dCols");if(b)b.hidden=!isGame(g)||g.kind==="app";}
   {const b=$("dAddTo");if(b)b.hidden=!addCan(g);if(b&&!b.hidden){const c=$("dCols");if(c)c.hidden=true}} /* (beta.14) Add to… (Windows / Linux, not in Kid mode); it covers My shelves, so the older My shelves button steps aside */
   {const b=$("dChooseManual");if(b){b.hidden=!(g.kind==="rom"&&api.manualStudio&&g.file);b.textContent=hasManual(g)?"Choose manual…":"Find a manual…";b.title=!hasManual(g)&&g.manualMiss?`Boxshelf looked online on ${new Date(g.manualMiss).toLocaleDateString()} and found no manual for this game. Search or add one here.`:""}}
@@ -4893,6 +4893,10 @@ async function chooseGameEmu(g){if(!g||g.kind!=="rom"||!api.gameEmulator)return;
 (function(){const c=$("dActEnd");if(!c||$("dRename"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dRename";b.textContent="Rename";b.title="Give this game the name you want on your shelf";
   b.addEventListener("click",()=>{const g=curGame();if(!g||!api.renameGame||!(g.kind==="rom"||g.kind==="steam"))return;const s=g._sh||shelfFor(g);const ref=g.kind==="rom"?{systemId:s.id,file:g.file}:{id:g.id};
     closeDetails(true);play_("panel");Setup.open({page:"rename",ref,title:g.title,fileTitle:g.fileTitle||""})});c.before(b)})();
+const gameKeyOf=g=>{if(!g)return "";if(g.kind==="rom"){const s=g._sh||shelfFor(g);return s&&g.file?s.id+":"+g.file:String(g.id||"")}return String(g.id||"")};
+(function(){const c=$("dActEnd");if(!c||$("dEditDetails"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dEditDetails";b.hidden=true;b.textContent="Edit details…";b.title="Search online metadata across all platforms or edit year, developer, genres and synopsis";
+  b.addEventListener("click",()=>{const g=curGame();if(!g||!api.saveGameDetails||!(g.kind==="rom"||g.kind==="steam")||!window.Setup)return;
+    closeDetails(true);play_("panel");Setup.open({page:"gamedetails",id:gameKeyOf(g),title:g.title,info:g.info||{}})});c.before(b)})();
 // the Details panel's "Choose manual…" button (Manual Studio): every manual found for this game side by side, in Settings
 // → Art & manuals (the same picker as the box art's); B there goes up to the console's games, then the Art page
 (function(){const m=$("dManual");if(!m||$("dChooseManual"))return;const b=document.createElement("button");b.className="btn";b.type="button";b.id="dChooseManual";b.textContent="Choose manual…";b.title="Every manual found for this game, side by side: pick another language, region or scan, or add your own PDF";
@@ -4943,7 +4947,7 @@ function dvBuild(){
   const fav=dvMk("button","btn d-ico dv-round dv-fav",DV_ICO.heart);fav.type="button";fav.id="dFav";fav.setAttribute("aria-pressed","false");
   fav.addEventListener("click",()=>{Promise.resolve(toggleFav()).then(dvFavPaint,dvFavPaint)});
   const mb=$("dMoreBtn");mb.classList.add("dv-round");mb.setAttribute("aria-label","More");mb.title="More: the manual, the case, the emulator, box art, rename, My shelves, hide";mb.before(fav);
-  {const ae=$("dActEnd");if(ae)["dManual","dInspect","dGameEmu","dBoxArt","dBoxArtPc","dRename","dAddTo","dCols","dHide","dChooseManual","dEmu","dTrailerPick"].forEach(id=>{const b=$(id);if(b)ae.before(b)})}
+  {const ae=$("dActEnd");if(ae)["dManual","dInspect","dGameEmu","dBoxArt","dBoxArtPc","dRename","dEditDetails","dAddTo","dCols","dHide","dChooseManual","dEmu","dTrailerPick"].forEach(id=>{const b=$(id);if(b)ae.before(b)})}
   hero.append(acts,menu);
   const tr=$("dTrailer");tr.innerHTML='<span class="dv-vfull"><span class="dv-trg" id="dvTrG"></span><span id="dvTrL">Pause</span><span class="dv-tr2" id="dvTr2"></span></span>'; /* (beta.14: dvTr2, the volume and full-screen keys beside it) */tr.setAttribute("aria-label","Pause the trailer");tr.title="Pause (Y: full screen)"; /* (beta.12: A pauses / plays it here; Y is full screen) */
   const vid=dvMk("div","dv-vid");vid.id="dvVid";const none=dvMk("span","dv-none");none.id="dvNone";vid.append($("dMedia"),none,tr,dvSndBuild());boxSync(); /* (beta.12: the speaker and volume bar; the box's sound follows its picture) */
@@ -4987,7 +4991,7 @@ function dvBuild(){
   row("man","Manual","Open",()=>dvPress(hasManual(curGame())?"dManual":"dChooseManual"));
   row("art","Box art","Change",()=>dvPress("dBoxArt"));
   dv.crow.setup.hidden=true;cL.append(rows,$("dHow"));
-  [["dvRen","Rename on the shelf","dRename"],["dvAdd","Add to another shelf…","dAddTo"],["dvCol","Add to one of My shelves","dCols"],["dvHide","Hide from the shelf","dHide"]].forEach(([id,l,t])=>{const b=dvMk("button","dv-act");b.type="button";b.id=id;b.textContent=l;b.dataset.for=t;b.addEventListener("click",()=>dvPress(t));cR.append(b)});
+  [["dvRen","Rename on the shelf","dRename"],["dvEditDet","Edit details…","dEditDetails"],["dvAdd","Add to another shelf…","dAddTo"],["dvCol","Add to one of My shelves","dCols"],["dvHide","Hide from the shelf","dHide"]].forEach(([id,l,t])=>{const b=dvMk("button","dv-act");b.type="button";b.id=id;b.textContent=l;b.dataset.for=t;b.addEventListener("click",()=>dvPress(t));cR.append(b)});
   cR.append(d.querySelector(".d-adv"));copy.append(cL,cR);
   navT.append(bump("dv-rb",1));
   const foot=dvMk("div","dv-foot");foot.setAttribute("aria-hidden","true"); /* (the panel fades out under the hint bar) */
@@ -5061,7 +5065,7 @@ function dvCopy(g){const R=dv.crow,a=g.art||{},s=shelfFor(g)||{},man=Array.isArr
   const cm=$("dChooseManual");set("man",man.length?`${man.length} pages`:g.manualMiss?"None found online":"Not found yet",man.length>0);btn("man",man.length>0||(!!cm&&!cm.hidden),man.length?"Open":"Find");
   const parts=[a.front&&"front",a.back&&"back",a.spine&&"spine",a.disc&&lcWord(s.id?mediaWord(s.id):"Disc")].filter(Boolean),w=parts.length>1?parts.slice(0,-1).join(", ")+" and "+parts[parts.length-1]:parts[0]||"";
   set("art",w?w[0].toUpperCase()+w.slice(1):"No scan yet",parts.length===4);const ba=$("dBoxArt");btn("art",!!ba&&!ba.hidden);
-  ["dvRen","dvAdd","dvCol","dvHide"].forEach(id=>{const b=$(id),t=b&&$(b.dataset.for);if(b)b.hidden=!t||t.hidden})} /* (beta.14: dvAdd shows where Add to… does, dvCol where it doesn't: Android, Kid mode) */
+  ["dvRen","dvEditDet","dvAdd","dvCol","dvHide"].forEach(id=>{const b=$(id),t=b&&$(b.dataset.for);if(b)b.hidden=!t||t.hidden})} /* (beta.14: dvAdd shows where Add to… does, dvCol where it doesn't: Android, Kid mode) */
 // Set up for me: what Settings → the console's page knows (asked once a game, when Your copy shows)
 function dvSetup(g){const r=dv.crow.setup;if(!r)return;const s=g&&g.kind==="rom"?shelfFor(g):null;if(!s||!s.emulator||!api.emuSetupStatus){r.hidden=true;return}
   const put=st=>{if(curGame()!==g||mode!=="details")return;const ok=!!(st&&st.supported);r.hidden=!ok;if(!ok)return;const done=!!st.done,t=r.querySelector(".t");

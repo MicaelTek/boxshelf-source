@@ -30,6 +30,16 @@ function ownNames(def, gs) { const G = cfg && cfg.games; if (!G) return gs;
   return gs.map(g => { const o = G[def.id + ':' + g.file]; return o && o.title && o.title !== g.title ? { ...g, fileTitle: g.title, title: o.title } : g; });
 }
 const ownTitle = id => { const o = cfg && cfg.games && cfg.games[String(id)]; return o && o.title ? o.title : ''; }; // (PC games, by id)
+const ownInfo = id => { const o = cfg && cfg.games && cfg.games[String(id)]; return o && o.info ? o.info : null; };
+function applyOwnInfo(base, own) {
+  if (!own || typeof own !== 'object') return base;
+  const out = { ...(base || {}) };
+  for (const [k, v] of Object.entries(own)) {
+    if (Array.isArray(v)) { if (v.length) out[k] = v.slice(); }
+    else if (v != null && v !== '') out[k] = v;
+  }
+  return Object.keys(out).length ? out : base;
+}
 const { scanSteamSafe, steamRoot, isMainSteam, steamAnswers } = require('./main/steam');
 const steamart = require('./main/steamart');
 const pcgames = require('./main/pcgames'); // (beta.4) Epic, Quiver Launcher and games added by hand
@@ -700,7 +710,7 @@ async function buildLibrary() {
     // and the per-game details with a breath every 25 ms (thousands of games' info lookups in one go stalled it too)
     const games = []; let t0 = Date.now();
     for (const g of await scanSystemAsync(def, sc)) { if (Date.now() - t0 > 25) { await new Promise(r => setImmediate(r)); t0 = Date.now(); }
-      games.push({ ...g, info: moreShotsInfo(def.id, g, covers.gameInfo(def.id, g.title)), manualMiss: manualMiss(def.id, g), art: { front: fileUrl(g.art.front), hero: fileUrl(g.art.hero), back: fileUrl(g.art.back), madeBack: g.art.madeBack || undefined, spine: fileUrl(g.art.spine), madeSpine: g.art.madeSpine || undefined, disc: fileUrl(g.art.disc), manual: def.id === 'wiiu' ? await withCoverAsync(def.id, g, (g.art.manual || []).map(fileUrl)) /* (beta.10: async) */ : (g.art.manual || []).map(fileUrl), manualPdf: fileUrl(g.art.manualPdf) } }); }
+      games.push({ ...g, info: applyOwnInfo(moreShotsInfo(def.id, g, covers.gameInfo(def.id, g.title)), ownInfo(def.id + ':' + g.file)), manualMiss: manualMiss(def.id, g), art: { front: fileUrl(g.art.front), hero: fileUrl(g.art.hero), back: fileUrl(g.art.back), madeBack: g.art.madeBack || undefined, spine: fileUrl(g.art.spine), madeSpine: g.art.madeSpine || undefined, disc: fileUrl(g.art.disc), manual: def.id === 'wiiu' ? await withCoverAsync(def.id, g, (g.art.manual || []).map(fileUrl)) /* (beta.10: async) */ : (g.art.manual || []).map(fileUrl), manualPdf: fileUrl(g.art.manualPdf) } }); }
     // (beta.7) arcade zips are named from FinalBurn Neo's list: fetched once in the background, then the shelf refreshes
     for (const g of rommGames(def.id, games)) games.push(g); // (beta.12) this console's RomM games not on this PC yet
     if (games.length && arcadenames.SYSTEMS.has(def.id) && !arcadenames.ready()) arcadenames.fetchNames().then(ok => { if (ok && alive()) win.webContents.send('library:changed', { arcade: 1 }); });
@@ -719,7 +729,7 @@ async function buildLibrary() {
   if (steamGiven && !isMainSteam(steamGiven) && steamMain === undefined) { steamMain = null; try { const p = await findSteam(); if (p && steamRoot(p) && isMainSteam(steamRoot(p))) { steamMain = p; log('Steam: the folder set is a library; using Steam\'s own folder for the list of libraries'); } } catch {} }
   if (steamUp && cfg.steam.enabled && cfg.steam.path) {
     // Steam's own cached art first, then anything Boxshelf fetched from the Steam store for games Steam has no cover for
-    pcShelf = (await scanSteamSafe(cfg.steam.path, { hideTools: cfg.steam.hideTools !== false, log, mainPath: steamMain || '' })).map(g => { const l = steamart.local(g.appid), t = ownTitle(g.id) || g.title; return { ...g, ...(ownTitle(g.id) ? { title: t, fileTitle: g.title } : {}), info: moreShotsInfo('pc', { file: g.id, title: t }, steamart.gameInfo(g.appid)), art: { front: fileUrl(pccovers.cover(g.id) || g.art.front || l.front), hero: fileUrl(g.art.hero || l.hero) } }; }); // (beta.5: a cover chosen in the picker wins)
+    pcShelf = (await scanSteamSafe(cfg.steam.path, { hideTools: cfg.steam.hideTools !== false, log, mainPath: steamMain || '' })).map(g => { const l = steamart.local(g.appid), t = ownTitle(g.id) || g.title; return { ...g, ...(ownTitle(g.id) ? { title: t, fileTitle: g.title } : {}), info: applyOwnInfo(moreShotsInfo('pc', { file: g.id, title: t }, steamart.gameInfo(g.appid)), ownInfo(g.id)), art: { front: fileUrl(pccovers.cover(g.id) || g.art.front || l.front), hero: fileUrl(g.art.hero || l.hero) } }; }); // (beta.5: a cover chosen in the picker wins)
   }
   // (beta.4) Epic's installs join the PC shelf; Quiver Launcher's apps and games added by hand get the Custom shelf. They
   // are PC games with a source (kind 'steam' keeps every shelf feature); covers come from the Steam app their title
@@ -735,7 +745,7 @@ async function buildLibrary() {
   // (Steam art by title only for Epic's store games: a recomp or a program added by hand often shares its name with an
   // unrelated Steam game, "Quarantine" got a puzzle game's cover; they keep the made-up case)
   const pcGame = g => { const sid = STORE_SRC.has(g.source) ? pcgames.steamIdOf(g.title) : null, l = sid ? steamart.local(sid) : {};
-    const info = moreShotsInfo('pc', { file: g.id, title: g.title }, sid ? steamart.gameInfo(sid) : null);
+    const info = applyOwnInfo(moreShotsInfo('pc', { file: g.id, title: g.title }, sid ? steamart.gameInfo(sid) : null), ownInfo(g.id));
     return { kind: 'steam', source: g.source, id: g.id, title: g.title, ...(info ? { info } : {}), art: { front: fileUrl(pccovers.cover(g.id) || l.front), hero: fileUrl(l.hero), icon: g.icon || undefined } }; };
   // (beta.10) a game added by hand can be moved to the PC shelf (Settings → Custom games → the game → Shelf); (beta.14) or
   // to any console's shelf (one is made for it if that console has none); an id that isn't a console stays on Custom
@@ -1958,6 +1968,21 @@ handle('game:status', ({ id, status }) => {
   if (Object.keys(cur).length) games[key] = cur; else delete games[key];
   applyCfg({ ...cfg, games }); return { ok: true, games: cfg.games };
 });
+handle('game:searchDetails', async ({ title, allPlatforms } = {}) => {
+  const I = igdbInit();
+  if (!I.client.ready()) return { ok: false, error: 'igdb_not_configured', list: [] };
+  const list = await I.searchGames(I.client, String(title || '').slice(0, 120), allPlatforms === false ? 'pc' : '');
+  return { ok: true, list };
+});
+handle('game:saveDetails', ({ id, info } = {}) => {
+  const key = String(id == null ? '' : id).slice(0, 2048); if (!key) throw new Error('No game.');
+  const games = { ...(cfg.games || {}) }, cur = { ...(games[key] || {}) };
+  const clean = info == null ? null : config.sanitizeGameInfo(info);
+  if (clean) cur.info = clean; else delete cur.info;
+  if (Object.keys(cur).length) games[key] = cur; else delete games[key];
+  applyCfg({ ...cfg, games }); scanCfg = null;
+  return { ok: true, games: cfg.games };
+});
 handle('pc:status', async () => { const pc = cfg.pc || {}; let epic = null; try { epic = pcgames.epicGames().length; } catch {}
   // (beta.7) each store's installed games, counted whether its switch is on or not (Settings says what it would add)
   const n = async f => { try { return (await f()).length; } catch { return null; } };
@@ -2407,17 +2432,26 @@ handle('info:more', async ({ systemId, file, title } = {}) => {
     const sInfo = sid ? await steamart.fetchInfoOne(sid).catch(() => null) : null;
     const I = igdbInit();
     const iInfo = I.client.ready() ? await I.lookupInfo(I.client, 'pc', { file: id, title: t }).catch(() => null) : null;
-    if (!sInfo && !iInfo) return null;
     const out = { ...(sInfo || {}) };
     if (iInfo) {
       for (const [k, v] of Object.entries(iInfo)) if ((out[k] == null || out[k] === '' || (Array.isArray(out[k]) && !out[k].length)) && v != null && v !== '') out[k] = v;
     }
-    return Object.keys(out).length ? out : null;
+    if (pc && (pc.source === 'custom' || pc.source === 'quiver') && !out.overview && I.client.ready()) {
+      const alt = await I.client.lookup('any', { file: id, title: t }).catch(() => null);
+      const ai = alt && alt.hit ? I.infoOf(alt.hit) : null;
+      if (ai) {
+        I.put('pc', { file: id, title: t }, alt.hit);
+        if (!sInfo && (!iInfo || !iInfo.overview)) Object.assign(out, ai);
+        else for (const [k, v] of Object.entries(ai)) if ((out[k] == null || out[k] === '' || (Array.isArray(out[k]) && !out[k].length)) && v != null && v !== '') out[k] = v;
+      }
+    }
+    const fin = applyOwnInfo(out, ownInfo(id));
+    return fin && Object.keys(fin).length ? fin : null;
   }
-  const I = igdbInit(); if (!I.client.ready()) return null;
+  const I = igdbInit(); if (!I.client.ready()) return applyOwnInfo(null, ownInfo(systemId + ':' + file));
   const f = gameFile(systemId, file).file, lf = f.toLowerCase();
   const sh = (lastLib || []).find(s => s && s.id === systemId), g = (sh && (sh.games || []).find(x => x && typeof x.file === 'string' && x.file.toLowerCase() === lf)) || { file: f, title: String(title || '') };
-  return I.lookupInfo(I.client, systemId, g);
+  return applyOwnInfo(await I.lookupInfo(I.client, systemId, g), ownInfo(systemId + ':' + file));
 });
 handle('shots:more', async ({ systemId, file, title, shots } = {}) => {
   const cleanShots = (Array.isArray(shots) ? shots : []).filter(u => typeof u === 'string' && /^(https|bsfile):/.test(u)).slice(0, 8);
@@ -2433,7 +2467,11 @@ handle('shots:more', async ({ systemId, file, title, shots } = {}) => {
         try { const si = await steamart.fetchInfoOne(sid); if (si && Array.isArray(si.shots)) base = si.shots.filter(u => typeof u === 'string' && /^https:/.test(u)).slice(0, 8); } catch {}
       }
     }
-    const res = await M.topUp('pc', { file: id, title: t }, base);
+    let res = await M.topUp('pc', { file: id, title: t }, base);
+    if ((!Array.isArray(res) || res.length < 2) && pc && (pc.source === 'custom' || pc.source === 'quiver')) {
+      const res2 = await M.topUp('pc', { file: id, title: t }, Array.isArray(res) ? res : base, { lookupSysId: 'any', only: ['igdb'], force: true });
+      if (Array.isArray(res2) && res2.length) res = res2;
+    }
     return Array.isArray(res) && res.length ? res : base;
   }
   const f = gameFile(systemId, file).file, lf = f.toLowerCase(); const M = moreShotsInit();

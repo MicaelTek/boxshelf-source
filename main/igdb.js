@@ -79,7 +79,24 @@ function client(o) {
     pr.then(v => { if (!v) memo.delete(mk); }, () => memo.delete(mk));
     return pr;
   }
-  return { ready, lookup, query, refused };
+  function search(title, sysId = '') {
+    const t = titleOf({ title }); if (!t || !ready()) return Promise.resolve([]);
+    const p = PLAT[sysId];
+    const q = `search "${t}"; fields ${FIELDS},platforms.name; ${p ? `where platforms = (${p}); ` : ''}limit 12;`;
+    return query('games', q).then(L => (Array.isArray(L) ? L : []).filter(h => h && typeof h.name === 'string' && h.name).map(h => {
+      const i = infoOf(h) || {};
+      return {
+        id: h.id,
+        name: h.name,
+        year: i.year || '',
+        platforms: (Array.isArray(h.platforms) ? h.platforms : []).map(x => str(x && x.name)).filter(Boolean).slice(0, 4),
+        info: i,
+        shots: shotsOf(h).slice(0, 8),
+        cover: coverOf(h) || null
+      };
+    }));
+  }
+  return { ready, lookup, search, query, refused };
 }
 
 // ---------- what an answer holds ----------
@@ -148,4 +165,9 @@ async function lookupInfo(c, sysId, game) {
   return get(sysId, game);
 }
 
-module.exports = { client, shotsOf, coverOf, infoOf, fill, init, get, due, put, merge, gaps, lookupInfo, flush, PLAT, RETRY, _t: { keyOf, load: () => load() } };
+async function searchGames(c, title, sysId = '') {
+  if (!c || !c.ready() || (c.refused && c.refused())) return [];
+  try { return await c.search(title, sysId); } catch (e) { log('IGDB search:', (e && e.message) || ''); return []; }
+}
+
+module.exports = { client, shotsOf, coverOf, infoOf, fill, init, get, due, put, merge, gaps, lookupInfo, searchGames, flush, PLAT, RETRY, _t: { keyOf, load: () => load() } };
