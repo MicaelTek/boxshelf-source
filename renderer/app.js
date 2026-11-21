@@ -201,12 +201,13 @@ function pcShelfKeep(g){
 }
 function pcFilterActive(){const p=pcCfg();return !!(p&&((Array.isArray(p.activeFilters)&&p.activeFilters.length)||(p.activeInstallFilter&&p.activeInstallFilter!=="all")))}
 function pcFilterSummary(){
-  const p=pcCfg();if(!p)return "All";
+  const tr=s=>(window.BsI18n&&BsI18n.t?BsI18n.t(s):s);
+  const p=pcCfg();if(!p)return tr("All");
   const gs=Array.isArray(p.groups)?p.groups:[],af=Array.isArray(p.activeFilters)?p.activeFilters:[];
-  const names=af.map(id=>id==="__favorites"?"Favorites":id==="__uncategorized"?"Uncategorized":((gs.find(g=>g.id===id)||{}).name)).filter(Boolean);
-  if(p.activeInstallFilter==="installed")names.push("Installed");
-  else if(p.activeInstallFilter==="not_installed")names.push("Not installed");
-  return names.length?names.join(", "):"All";
+  const names=af.map(id=>id==="__favorites"?tr("Favorites"):id==="__uncategorized"?tr("Uncategorized"):((gs.find(g=>g.id===id)||{}).name)).filter(Boolean);
+  if(p.activeInstallFilter==="installed")names.push(tr("Installed"));
+  else if(p.activeInstallFilter==="not_installed")names.push(tr("Not installed"));
+  return names.length?names.join(", "):tr("All");
 }
 function arrange(){
   const keep=filterFn(filterBy),own=addsIndex();
@@ -755,8 +756,9 @@ function showBack(el,on){clearTimeout(el._sbT);if(on){el.classList.add("showback
 let landT;
 function landSel(){
   clearTimeout(landT);if(landSel.prev&&landSel.prev.el)landSel.prev.el.classList.remove("landed");landSel.prev=slots[sel];const s=slots[sel];if(!s)return;
+  const g=curGame();if(!g)return;
   landT=setTimeout(()=>{if(s.el){s.el.classList.add("landed");ensureBack(true);if(!ANDROID)prepBack(s,curGame())}},380);qsFreshSoon(); // (Android: its handheld budget keeps backs to the flip)
-  const g=curGame(),gh0=themeOf().halo(shelfHue(g),shelfPos()),gh=window.bsPlatform&&bsPlatform.os==="android"?Math.round(gh0/3)*3:gh0,glow=hsl(gh,95,62,.62); /* Android: the hue in 3° steps (invisible), so most shelf steps don't repaint the halo, floor and tab bar */glowEls=glowEls||[...document.querySelectorAll(".floor,.sel-halo,#tabs")];if(glow!==lastGlow){lastGlow=glow;
+  const gh0=themeOf().halo(shelfHue(g),shelfPos()),gh=window.bsPlatform&&bsPlatform.os==="android"?Math.round(gh0/3)*3:gh0,glow=hsl(gh,95,62,.62); /* Android: the hue in 3° steps (invisible), so most shelf steps don't repaint the halo, floor and tab bar */glowEls=glowEls||[...document.querySelectorAll(".floor,.sel-halo,#tabs")];if(glow!==lastGlow){lastGlow=glow;
     // a step along the shelf only walks the hue by a degree or so: the tab bar takes that at once instead of fading it in
     // over .6 s (a colour fade the compositor can't do, so it was a repaint every frame for as long as you kept moving);
     // a real change (another shelf, another theme) still fades
@@ -781,8 +783,8 @@ function metaFor(g){
 function updateInfo(){pvBackSchedule();
   bsSelectSoon();
   const g=curGame(),info=$("info");
-  if(!g){const es=emptyShelf();$("gTitle").textContent=filterBy&&filterBy!=="all"?"No games match this filter":"No games here yet";$("gMeta").innerHTML=filterBy&&filterBy!=="all"?`<span>${showPad()?"Hold "+padWord("menu"):"Press G"} to change the filter</span>`:"";
-    if(es&&!(filterBy&&filterBy!=="all")){const b=document.createElement("button");b.type="button";b.className="empty-set";b.textContent=es.kind==="steam"?`Press ${okWord()} to open Steam settings`:`Press ${okWord()} to open ${es.name} settings and add a games folder`;b.addEventListener("click",()=>play());$("gMeta").appendChild(b)}
+  if(!g){const es=emptyShelf(),pcF=!!(cur()&&cur().id==="pc"&&pcFilterActive()),anyF=!!(filterBy&&filterBy!=="all")||pcF;$("gTitle").textContent=anyF?"No games match this filter":"No games here yet";$("gMeta").innerHTML=filterBy&&filterBy!=="all"?`<span>${showPad()?"Hold "+padWord("menu"):"Press G"} to change the filter</span>`:pcF?`<span>Press L to change the filter</span>`:"";
+    if(es&&!anyF){const b=document.createElement("button");b.type="button";b.className="empty-set";b.textContent=es.kind==="steam"?`Press ${okWord()} to open Steam settings`:`Press ${okWord()} to open ${es.name} settings and add a games folder`;b.addEventListener("click",()=>play());$("gMeta").appendChild(b)}
     renderHints();return}
   $("gTitle").textContent=g.title;
   const raw=rawItem(),meta=raw&&raw!==g?["Surprise pick · "+(raw.pick.sh||shelves[raw.pick.shelf]).name,...metaFor(g).slice(0,2),rerollWord()]:metaFor(g);
