@@ -1828,7 +1828,10 @@ function gvRows(){
   const pool=[...s.byId.values()].filter(g=>!used.has(g.id));
   const q=s.q.trim().toLowerCase();
   if(q){
-    const hits=pool.filter(g=>g.title.toLowerCase().includes(q)||(g.shelfName||"").toLowerCase().includes(q)).sort((a,b)=>a.title.toLowerCase().indexOf(q)-b.title.toLowerCase().indexOf(q)||a.title.localeCompare(b.title));
+    const normQ=x=>String(x||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+    const qToks=normQ(q).split(" ").filter(Boolean);
+    const hits=pool.filter(g=>{const raw=(g.title+" "+(g.shelfName||"")+" "+(g.label||"")).toLowerCase();if(!qToks.length)return raw.includes(q);const nq=normQ(raw);return qToks.every(w=>nq.includes(w))})
+      .sort((a,b)=>{const aq=a.title.toLowerCase().indexOf(q),bq=b.title.toLowerCase().indexOf(q);if(aq>=0&&bq<0)return -1;if(bq>=0&&aq<0)return 1;return (aq>=0&&bq>=0?aq-bq:0)||a.title.localeCompare(b.title)});
     if(!hits.length)out.push(verRow(s.rows,"nohit",()=>infoRow(`No game matches “${s.q.trim()}”`,"",{text:"Already-grouped games are excluded unless ungrouped first."})));
     else for(const g of hits.slice(0,30)){const r=verRow(s.rows,"add|"+g.id,()=>A(g.title,"Stack","Add this version to the current group.",()=>addMem(g),{ns:true,sub:()=>({text:g.label||g.shelfName}),keys:"add version "+g.title.toLowerCase()}));r.label=g.title;out.push(r)}
   }else{
