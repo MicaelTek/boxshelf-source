@@ -66,6 +66,8 @@ rules:[
   [/^(\d+) of (\d+) installed$/, (_, a, b) => `${a} de ${b} ${b === "1" ? "instalado" : "instalados"}`],
   [/^(\d+) of (\d+) games?$/, (_, a, b) => `${a} de ${b} ${b === "1" ? "jogo" : "jogos"}`],
   [/^(\d+) of (\d+) apps?$/, (_, a, b) => `${a} de ${b} ${b === "1" ? "app" : "apps"}`],
+  [/^No (.+) games in your library$/, (_, st) => `Nenhum jogo da ${st} na sua biblioteca`],
+  [/^No (.+) games match the current filter$/, (_, st) => `Nenhum jogo da ${st} corresponde ao filtro atual`],
 ],
 patterns:{
   "({0} borrow-only or without a usable file were left out)": "({0} apenas para empréstimo ou sem arquivo utilizável foram deixados de fora)",
