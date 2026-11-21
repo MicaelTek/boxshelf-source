@@ -493,8 +493,8 @@ function regroup(S){
   const openInto=take("display","Open into"); // (taken first: Look's More options gathers the rest of Display)
   // ---- Library: your consoles and games ----
   {const pc=secOf("pc"),cu=secOf("custom"),ap=secOf("apps");
+    if(pc)M("PC games","lib-pc","Steam, Epic, GOG, Ubisoft, EA and Xbox: which stores' games go on the PC shelf.",pc.lead,whole("pc"),{keys:"steam epic gog ubisoft ea xbox game pass store pc",ns:true});
     const rows=[{t:"dyn",fn:attnRows},take("consoles",r=>r.t==="consoles"),H("Your games"),take("sys","Rescan games"),
-      pc?M("PC games","lib-pc","Steam, Epic, GOG, Ubisoft, EA and Xbox: which stores' games go on the PC shelf.",pc.lead,whole("pc"),{keys:"steam epic gog ubisoft ea xbox game pass store pc",ns:true}):null,
       cu?M("Custom games","lib-custom","Decomps and recomps, PC ports, Playnite and Quiver Launcher games, any program: the Custom shelf.",cu.lead,whole("custom"),{keys:"custom decomp recomp port playnite quiver program exe add games",ns:true}):null,
       ap&&ap.rows.length?M("Media apps","lib-apps","Stremio and Nuvio on the Media shelf.",ap.lead,whole("apps"),{keys:"stremio nuvio media apps",ns:true}):null,
       take("shelf","My shelves"),take("shelf","Console order"),take("art","Hidden games")];
@@ -1415,7 +1415,7 @@ function sw2BuildRows(){sw2Want();const c=sysCfg("sw2"),fx=sw2Fixed(),L=sw2b||[]
 /* ---------- search ---------- */
 function allSettings(){const out=[];
   SECTIONS.forEach((s,si)=>{let k=0,grp="";const rs=expand(s).rows;rs.forEach(r=>{if(r.t==="head"){grp=r.text;return}if(!shown(r))return;const i=k++;
-    if(r.t==="consoles"){consoleList().forEach(c=>out.push({sec:si,console:c.id,label:c.name,where:"Games › Consoles",text:`${c.name} ${c.emulatorName||""} emulator console`}));return}
+    if(r.t==="consoles"){if(MORE["lib-pc"]){out.push({sec:si,more:"lib-pc",at:0,i:0,label:"PC games",where:"Library › PC",text:"PC games steam epic gog ubisoft ea xbox game pass store pc"});let k2=0,grp2="";expand(MORE["lib-pc"]).rows.forEach(r2=>{if(r2.t==="head"){grp2=r2.text;return}if(!shown(r2))return;const i2=k2++;if(r2.ns&&!r2.keys)return;out.push({sec:si,more:"lib-pc",at:0,i:i2,row:r2,label:r2.label,where:`${s.name} › PC${grp2?" › "+grp2:""}`,text:[r2.label,r2.info,r2.keys,s.name,"PC",grp2,r2.opts&&typeof r2.opts!=="function"?r2.opts.map(o=>o[1]).join(" "):""].join(" ")})})}consoleList().forEach(c=>out.push({sec:si,console:c.id,label:c.name,where:"Games › Consoles",text:`${c.name} ${c.emulatorName||""} emulator console`}));return}
     if(r.ns&&!r.keys)return;out.push({sec:si,i,row:r,label:r.label,where:`${s.g?s.g+" › ":""}${s.name}${grp?" › "+grp:""}`,text:[r.label,r.info,r.keys,s.name,grp,r.opts&&typeof r.opts!=="function"?r.opts.map(o=>o[1]).join(" "):""].join(" ")})})});
   // the sections' own sub-pages (Screen & TV, Art Studio, Advanced…): found here, opened on the row inside
   SECTIONS.forEach((s,si)=>{const top=rowsOf(expand(s));top.forEach((m,at)=>{const pg=m.pg&&MORE[m.pg];if(!pg)return;let k=0,grp="";expand(pg).rows.forEach(r=>{if(r.t==="head"){grp=r.text;return}if(!shown(r))return;const i=k++;if(r.ns&&!r.keys)return;
@@ -1956,6 +1956,7 @@ function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_
     goSecId(/^(steam|epic)-/.test(coverSearch.id)?"pc":"custom");focus="page";rowI=0;openSub({kind:"more",id:"coversearch"});return}
   if(page==="pc-edit"&&MORE["pc-edit"]){goSecId("pc");focus="page";rowI=0;inMore("pc-edit");return}
   // (beta.9) any page of its own by its id (Android's Ports & custom APKs, Video previews…): opened in the section that holds it
+  if(page==="lib-pc"&&MORE["lib-pc"]){goSecId("consoles");focus="page";rowI=0;const k=libTileList().findIndex(c=>c._pcTile);if(k>=0)ci=k;openSub({kind:"more",id:"lib-pc"});return}
   if(MORE[page]&&!PAGE_MAP[page]){const s=SECTIONS.find(x=>x&&Array.isArray(x.rows)&&x.rows.some(r=>r&&r.pg===page));if(s){goSecId(s.id);focus="page";rowI=0;openSub({kind:"more",id:page});return}}
   if(page==="rename"&&o.ref){const file=String(o.fileTitle||o.title||""),cur=String(o.title||"");renameState={ref:o.ref,name:cur,saved:cur,file,renamed:!!o.fileTitle&&o.fileTitle!==cur};
     MORE.rename={id:"rename",name:`Rename ${cur}`.slice(0,60),lead:o.fileTitle&&o.fileTitle!==cur?`Its file's name: ${o.fileTitle}`:"Give this game the name you want on your shelf.",rows:[{t:"dyn",fn:renameRows}]};
@@ -1972,11 +1973,11 @@ function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_
     else studio={v:"games",sys:o.systemId,i:0,y:0};sSig="";return}
   if(consoleList().some(c=>c.id===page)){goSecId("consoles");ci=libTileList().findIndex(c=>c.id===page);subRet=0;sub={kind:"console",id:page};rowI=0;focus="page";if(page==="gc"&&api.findIpl&&iplCap())api.findIpl("gc").then(r=>{ipl=r;bump()}).catch(()=>{});return}
   const m=PAGE_MAP[page];if(!m)return;if(m.svc){goSecId("acct");focus="page";rowI=0;subRet=Math.max(0,rowsOf(sec()).findIndex(r=>r.status===m.svc));sub={kind:"svc",id:m.svc};return}const [id,label]=Array.isArray(m)?m:[m];goSecId(id);focus="page";rowI=0;if(label){const is=r=>r.label===label||r.was===label; /* (was: a row a platform renamed keeps its old name for links) */let k=rowsOf(sec()).findIndex(is);
-    if(k<0){const pg=rowsOf(sec()).map(r=>r.pg).filter(Boolean).find(g=>rowsOf(expand(MORE[g])).some(is));if(pg){inMore(pg);k=rowsOf(sec()).findIndex(is)}} // a row that lives on one of the section's sub-pages
+    if(k<0){const pgs=rowsOf(sec()).map(r=>r.pg).filter(Boolean);if(SECTIONS[secI]&&SECTIONS[secI].id==="consoles"&&MORE["lib-pc"])pgs.push("lib-pc");const pg=pgs.find(g=>rowsOf(expand(MORE[g])).some(is));if(pg){inMore(pg);k=rowsOf(sec()).findIndex(is)}} // a row that lives on one of the section's sub-pages
     if(k<0){const j=SECTIONS.findIndex(s=>rowsOf(expand(s)).some(is));if(j>=0){goSec(j);focus="page";k=rowsOf(sec()).findIndex(is)}} // (a row a platform moved to another section)
     if(k>=0)rowI=k}}
 // a deep link into one of the current section's sub-pages: B comes back to the row that opens it
-function inMore(id){const at=rowsOf(sec()).findIndex(r=>r.pg===id);if(at<0)return;subRet=at;sub={kind:"more",id};rowI=0}
+function inMore(id){let at=rowsOf(sec()).findIndex(r=>r.pg===id);if(at<0&&id==="lib-pc"&&MORE["lib-pc"])at=Math.max(0,rowsOf(sec()).findIndex(r=>r.t==="consoles"));if(at<0)return;subRet=at;sub={kind:"more",id};rowI=0}
 function prep(inf,opts){opts=opts||{};ensureDom();openId++;info=inf;cfg=clone(inf.config);ensureCfg();colRowsBy.clear();ADD.rows=null;COV.n=null;sw2Rm=false;sDirect=0;
   /* (beta.12) a RomM pairing left showing when Settings closed: its poll stopped with that visit, so it's cancelled, not shown stale */if(RM.pair&&RM.pair.on){RM.pair=null;try{api.rommPairCancel().catch(()=>{})}catch{}} /* (beta.8) rows built for the last visit held that visit's copy of the settings */
   studioClear();sRet=0;sInfo=null;sInfoBusy=false;sGames={};sCands={};sSets={};sBusy={};needRescan=false;raChanged=false;pending=false;raEmu=null;emuAsk=null;listSig="";edit=null;grab=null;results=null;query="";preSearch=null;sub=null;secI=0;rowI=0;ci=0;focus="side";infoOpen=false;det=null;ipl=null;pathOk={};status={};askT={};displays=null;outputs=null;hidden=null;readWhere=null;readOld=null;mInfo=null;mInfoBusy=false;mGames={};mCands={};mBusy={};mMsg={};
