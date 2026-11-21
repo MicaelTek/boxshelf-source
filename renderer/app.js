@@ -201,12 +201,13 @@ function pcShelfKeep(g){
 }
 function pcFilterActive(){const p=pcCfg();return !!(p&&((Array.isArray(p.activeFilters)&&p.activeFilters.length)||(p.activeInstallFilter&&p.activeInstallFilter!=="all")))}
 function pcFilterSummary(){
-  const p=pcCfg();if(!p)return "All";
+  const tr=s=>(window.BsI18n&&BsI18n.t?BsI18n.t(s):s);
+  const p=pcCfg();if(!p)return tr("All");
   const gs=Array.isArray(p.groups)?p.groups:[],af=Array.isArray(p.activeFilters)?p.activeFilters:[];
-  const names=af.map(id=>id==="__favorites"?"Favorites":id==="__uncategorized"?"Uncategorized":((gs.find(g=>g.id===id)||{}).name)).filter(Boolean);
-  if(p.activeInstallFilter==="installed")names.push("Installed");
-  else if(p.activeInstallFilter==="not_installed")names.push("Not installed");
-  return names.length?names.join(", "):"All";
+  const names=af.map(id=>id==="__favorites"?tr("Favorites"):id==="__uncategorized"?tr("Uncategorized"):((gs.find(g=>g.id===id)||{}).name)).filter(Boolean);
+  if(p.activeInstallFilter==="installed")names.push(tr("Installed"));
+  else if(p.activeInstallFilter==="not_installed")names.push(tr("Not installed"));
+  return names.length?names.join(", "):tr("All");
 }
 function arrange(){
   const keep=filterFn(filterBy),own=addsIndex();
@@ -443,7 +444,7 @@ function autoStatusChanged(){if(!cfgInfo||sysBusy())return;const a=autoOpts();
 function homeLine(g){const h=HIST[g.id];const parts=[shelfFor(g).name];if(h&&h.count)parts.push("played "+fmtDay(h.last/1000));if(isFav(g))parts.push("♥ Favorite");return parts}
 // a game favourited (or not) by id, from Settings → Library → PC games → Edit the PC shelf: the same list as H / Y held,
 // the shelf's heart and the Home shelf follow, quietly (no toast for each of a long list of changes)
-async function favSet(id,on){if(!cfgInfo||id==null)return false;id=String(id);on=!!on;const list=new Set(cfgInfo.config.ui.favorites||[]);if(on===list.has(id))return true;
+async function setFavorite(id,on){if(!cfgInfo||id==null)return false;id=String(id);on=!!on;const list=new Set(cfgInfo.config.ui.favorites||[]);if(on===list.has(id))return true;
   if(on)list.add(id);else list.delete(id);cfgInfo.config.ui.favorites=[...list];try{await api.saveConfig(cfgInfo.config)}catch{return false}
   const s=slots.find(x=>x.g&&String(x.g.id)===id);if(s&&s.el)s.el.classList.toggle("fav",on);
   const wasHome=cur()===HOME;buildHome();if(wasHome){if(!shelves.includes(HOME)){sysIdx=0;sel=0;build();renderTabs()}else{sel=Math.max(0,Math.min(sel,HOME.items.length-1));build()}}else renderTabs();
@@ -756,8 +757,9 @@ function showBack(el,on){clearTimeout(el._sbT);if(on){el.classList.add("showback
 let landT;
 function landSel(){
   clearTimeout(landT);if(landSel.prev&&landSel.prev.el)landSel.prev.el.classList.remove("landed");landSel.prev=slots[sel];const s=slots[sel];if(!s)return;
+  const g=curGame();if(!g)return;
   landT=setTimeout(()=>{if(s.el){s.el.classList.add("landed");ensureBack(true);if(!ANDROID)prepBack(s,curGame())}},380);qsFreshSoon(); // (Android: its handheld budget keeps backs to the flip)
-  const g=curGame(),gh0=themeOf().halo(shelfHue(g),shelfPos()),gh=window.bsPlatform&&bsPlatform.os==="android"?Math.round(gh0/3)*3:gh0,glow=hsl(gh,95,62,.62); /* Android: the hue in 3° steps (invisible), so most shelf steps don't repaint the halo, floor and tab bar */glowEls=glowEls||[...document.querySelectorAll(".floor,.sel-halo,#tabs")];if(glow!==lastGlow){lastGlow=glow;
+  const gh0=themeOf().halo(shelfHue(g),shelfPos()),gh=window.bsPlatform&&bsPlatform.os==="android"?Math.round(gh0/3)*3:gh0,glow=hsl(gh,95,62,.62); /* Android: the hue in 3° steps (invisible), so most shelf steps don't repaint the halo, floor and tab bar */glowEls=glowEls||[...document.querySelectorAll(".floor,.sel-halo,#tabs")];if(glow!==lastGlow){lastGlow=glow;
     // a step along the shelf only walks the hue by a degree or so: the tab bar takes that at once instead of fading it in
     // over .6 s (a colour fade the compositor can't do, so it was a repaint every frame for as long as you kept moving);
     // a real change (another shelf, another theme) still fades
@@ -782,8 +784,8 @@ function metaFor(g){
 function updateInfo(){pvBackSchedule();
   bsSelectSoon();
   const g=curGame(),info=$("info");
-  if(!g){const es=emptyShelf();$("gTitle").textContent=filterBy&&filterBy!=="all"?"No games match this filter":"No games here yet";$("gMeta").innerHTML=filterBy&&filterBy!=="all"?`<span>${showPad()?"Hold "+padWord("menu"):"Press G"} to change the filter</span>`:"";
-    if(es&&!(filterBy&&filterBy!=="all")){const b=document.createElement("button");b.type="button";b.className="empty-set";b.textContent=es.kind==="steam"?`Press ${okWord()} to open Steam settings`:`Press ${okWord()} to open ${es.name} settings and add a games folder`;b.addEventListener("click",()=>play());$("gMeta").appendChild(b)}
+  if(!g){const es=emptyShelf(),pcF=!!(cur()&&cur().id==="pc"&&pcFilterActive()),anyF=!!(filterBy&&filterBy!=="all")||pcF;$("gTitle").textContent=anyF?"No games match this filter":"No games here yet";$("gMeta").innerHTML=filterBy&&filterBy!=="all"?`<span>${showPad()?"Hold "+padWord("menu"):"Press G"} to change the filter</span>`:pcF?`<span>Press L to change the filter</span>`:"";
+    if(es&&!anyF){const b=document.createElement("button");b.type="button";b.className="empty-set";b.textContent=es.kind==="steam"?`Press ${okWord()} to open Steam settings`:`Press ${okWord()} to open ${es.name} settings and add a games folder`;b.addEventListener("click",()=>play());$("gMeta").appendChild(b)}
     renderHints();return}
   $("gTitle").textContent=g.title;
   const raw=rawItem(),meta=raw&&raw!==g?["Surprise pick · "+(raw.pick.sh||shelves[raw.pick.shelf]).name,...metaFor(g).slice(0,2),rerollWord()]:metaFor(g);
@@ -5363,7 +5365,7 @@ window.Shelf={
       return {id,title:String(g.title||id),fav:fav.has(id),hidden:hid.has(id),source:g.source||"steam",store:g.store||g.source||"steam",installed:g.source!=="owned",genres,multiplayer:/multi|coop|co-op|online|mmo/i.test(genres+" "+cats),minutes:g.minutes||0,status:(gm[id]&&gm[id].status)||"",appid:g.appid};
     }).sort((a,b)=>a.title.localeCompare(b.title,undefined,{sensitivity:"base"}))},
   pcGroupsChanged:()=>{pcFilterHudSync();if(cur()&&cur().id==="pc")applyArrange();else arrange()},
-  setFav:(id,on)=>favSet(id,on),setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
+  setFav:(id,on)=>setFavorite(id,on),setCollections:list=>{if(!cfgInfo||!Array.isArray(list))return;cfgInfo.config.ui.collections=list;reHome()},
   // (beta.14) Settings → My shelves → Automatic shelves switched (ui.autoShelves), and the genres / consoles a shelf can fill itself from
   setAutoShelves:o=>{if(!cfgInfo||!o||typeof o!=="object")return;cfgInfo.config.ui.autoShelves=Object.assign({},o);reHome()},autoChoices:()=>autoChoices(),
   homeButton:()=>{if(qm.open){qmClose();return "closed"}qmOpen();return qm.open?"opened":"busy"},quickMenuOpen:()=>!!qm.open, // the Thor's Home key while Boxshelf is the Home app
