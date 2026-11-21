@@ -485,7 +485,7 @@ function regroup(S){
       cu?M("Custom games","lib-custom","Decomps and recomps, PC ports, Playnite and Quiver Launcher games, any program: the Custom shelf.",cu.lead,whole("custom"),{keys:"custom decomp recomp port playnite quiver program exe add games",ns:true}):null,
       ap&&ap.rows.length?M("Media apps","lib-apps","Stremio and Nuvio on the Media shelf.",ap.lead,whole("apps"),{keys:"stremio nuvio media apps",ns:true}):null,
       take("shelf","My shelves"),
-      M("Game versions","lib-versions","Group multiple versions or platforms of the same game under one box, or auto-detect matching titles.","Group different versions or platforms of a game under one case, or check for duplicates across your whole library.",[{t:"dyn",fn:verManageRows}],{keys:"versions stack group duplicates recomp port",ns:true,sub:()=>{const n=verStacks().length;return n?{text:`${n} grouped`}:null}}),
+      M("Game versions","lib-versions","Group multiple versions or platforms of the same game under one box, or auto-detect matching titles.","Group different versions or platforms of a game under one case, or check for duplicates across your whole library.",[{t:"dyn",fn:verManageRows}],{keys:"versions stack group duplicates recomp port",ns:true,sub:()=>{const n=verStacks().length+verAutoGroups().length;return n?{text:`${n} grouped`}:null}}),
       take("shelf","Console order"),take("art","Hidden games")];
     const mo=more("consoles",[take("consoles","Find emulators again"),take("consoles","RocketLauncher"),take("consoles","Start games through RocketLauncher"),take("consoles","Front end RocketLauncher is told"),take("display","Seamless play"),...rest("consoles")]);
     out.push({g:"",id:"consoles",name:"Library",ic:"games",alias:["pc","custom","apps","library"],badge:(secOf("consoles")||{}).badge,dot:()=>attnList().some(x=>!x.tip)?"warn":null,
@@ -1679,7 +1679,41 @@ function colManageRows(){const L=colList(),out=[];
 let verScan={busy:false,checked:false,list:[],pick:new Set(),rows:new Map()};
 let gvState=null;
 const verStacks=()=>{cfg.ui=cfg.ui||{};if(!Array.isArray(cfg.ui.versions))cfg.ui.versions=[];return cfg.ui.versions};
-function verCommit(){scheduleSave();shelf("setVersions",clone(verStacks()));bump()}
+const verUngrouped=()=>{cfg.ui=cfg.ui||{};if(!Array.isArray(cfg.ui.versionsUngrouped))cfg.ui.versionsUngrouped=[];return cfg.ui.versionsUngrouped};
+function verSkipKey(k,add){
+  k=String(k||"").trim().toLowerCase();if(!k)return;
+  const L=verUngrouped(),i=L.indexOf(k);
+  if(add&&i<0)L.push(k);else if(!add&&i>=0)L.splice(i,1);
+}
+function verNormTitle(raw){
+  let s=String(raw||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  if(!s.trim())return "";
+  s=s.replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g," ").replace(/^([^,:-]+),\s*(the|an|a)(?=\s*[-:–—]|$)/i,"$2 $1");
+  s=s.replace(/\b(?:ver(?:sion)?\.?\s*\d+(?:\.\d+)*|v\d+(?:\.\d+)*|rev(?:ision)?(?:\.\s*|\s+)[a-z0-9]+|build\s*\d+)\b/g," ");
+  s=s.replace(/[&+]/g," and ").replace(/['’`]/g,"").replace(/[:\-–—_/\\.,!?*~|]+/g," ");
+  s=s.replace(/\b(?:game of the year edition|goty edition|definitive edition|complete edition|ultimate edition|enhanced edition|collector'?s edition|anniversary edition|special edition|director'?s cut|hd remaster|pc port|remastered|remake|recompiled|recomp|decompiled|decomp|edition|goty)\b/g," ");
+  return s.replace(/\s+/g," ").trim().replace(/^(?:the|an|a)\s+/,"").trim();
+}
+function verAutoGroups(byId){
+  if(gp("ui.autoStack")===false)return [];
+  byId=byId||verGamesMap();const used=verUsedIds(),skip=new Set(verUngrouped()),groups=new Map(),order={steam:0,gog:1,epic:2,xbox:3,ea:4,ubisoft:5,battlenet:6};
+  const rank=g=>g.installed===false?30+(String(g.store||"").toLowerCase() in order?order[String(g.store||"").toLowerCase()]:8):g.kind==="steam"?(g.source==="custom"||g.source==="quiver"?10:(String(g.source||"steam").toLowerCase() in order?order[String(g.source||"steam").toLowerCase()]:8)):20;
+  for(const g of byId.values()){
+    if(!g||!g.id||used.has(String(g.id)))continue;
+    const k=verNormTitle(g.title);if(!k||k.length<2||skip.has(k))continue;
+    if(!groups.has(k))groups.set(k,[]);groups.get(k).push(g);
+  }
+  const out=[];
+  for(const [key,ms] of groups.entries()){
+    if(ms.length<2)continue;
+    ms.sort((a,b)=>rank(a)-rank(b)||String(a.shelfName||"").localeCompare(String(b.shelfName||""))||a.title.localeCompare(b.title));
+    const cnt=new Map(),seen=new Map();ms.forEach(m=>cnt.set(m.label,(cnt.get(m.label)||0)+1));
+    const members=ms.map(m=>{let l=m.label||m.shelfName||"Version";if((cnt.get(l)||0)>1){const n=(seen.get(l)||0)+1;seen.set(l,n);l=`${l} (${n})`}return {id:String(m.id),title:m.title,shelfName:m.shelfName||"",label:l}});
+    out.push({key,primary:members[0].id,title:ms[0].title,members});
+  }
+  return out.sort((a,b)=>a.title.localeCompare(b.title,undefined,{sensitivity:"base"}));
+}
+function verCommit(){scheduleSave();shelf("setVersions",clone(verStacks()));shelf("reshelf");bump()}
 function verGamesMap(){const m=new Map(),L=window.Shelf&&Shelf.allGamesList?Shelf.allGamesList():allGamesList();for(const g of Array.isArray(L)?L:[])if(g&&g.id!=null&&!m.has(String(g.id)))m.set(String(g.id),g);return m}
 function verUsedIds(exceptId){const s=new Set();for(const st of verStacks()){if(!st||(exceptId&&st.id===exceptId))continue;for(const m of st.members||[])if(m&&m.id)s.add(String(m.id))}return s}
 function verRow(map,k,mk){let r=map.get(k);if(!r){r=mk();map.set(k,r)}return r}
@@ -1702,6 +1736,7 @@ function verStackSelected(){
     for(const m of grp.members||[]){if(!m||!m.id||used.has(m.id)||members.some(x=>x.id===m.id))continue;members.push({id:String(m.id),...(m.label?{label:String(m.label).slice(0,60)}:{})})}
     if(members.length<2)continue;
     members.forEach(m=>used.add(m.id));
+    verSkipKey(grp.key,false);
     L.push({id:"v"+Date.now().toString(36)+(n?"-"+n:""),primary:members[0].id,members});n++;
   }
   verScan.list=verScan.list.filter(g=>!verScan.pick.has(g.key));verScan.pick.clear();
@@ -1709,13 +1744,18 @@ function verStackSelected(){
 }
 function openGameVersions(o,viaRoute){
   o=o||{};const byId=verGamesMap(),cur=byId.get(String(o.id))||{id:String(o.id),title:String(o.title||"Game"),shelfName:o.shelfId||"",label:o.label||"Version"};
-  gvState={gid:String(cur.id),title:String(o.title||cur.title||"Game"),q:"",draft:[{id:String(cur.id),label:String(o.label||cur.label||"Version")}],draftPrimary:String(cur.id),byId,rows:new Map()};
+  const hasMan=verStacks().some(x=>x&&Array.isArray(x.members)&&x.members.some(m=>m.id===String(cur.id)));
+  const ag=!hasMan&&Array.isArray(o.autoVersions)&&o.autoVersions.length>1?o.autoVersions:(!hasMan?(verAutoGroups(byId).find(g=>g.members.some(m=>m.id===String(cur.id)))||{}).members:null);
+  const autoKey=o.autoKey||verNormTitle(cur.title);
+  gvState={gid:String(cur.id),title:String(o.title||cur.title||"Game"),q:"",autoKey,isAuto:!!(ag&&ag.length>1),draft:ag&&ag.length>1?ag.map(m=>({id:String(m.id),label:String(m.label||"Version")})):[{id:String(cur.id),label:String(o.label||cur.label||"Version")}],draftPrimary:String((ag&&ag[0]&&ag[0].id)||cur.id),byId,rows:new Map()};
   MORE.gameversions={id:"gameversions",name:`Versions: ${gvState.title}`.slice(0,60),lead:"Group different versions or platforms of this game under one shelf box.",rows:[{t:"dyn",fn:gvRows}]};
   if(viaRoute){goSecId("consoles");focus="page";rowI=0}
   openSub({kind:"more",id:"gameversions"});
 }
 function verManageRows(){
-  const s=verScan,L=verStacks(),byId=verGamesMap(),out=[H("Auto-detect duplicates")];
+  const s=verScan,L=verStacks(),byId=verGamesMap(),autos=verAutoGroups(byId),out=[];
+  out.push(verRow(s.rows,"autoStack",()=>T("Stack same-game versions automatically","ui.autoStack",true,"Automatically group multiple store copies, editions or platforms of the same game (e.g. Steam and Epic) under one box on the shelf.",{live:()=>{shelf("reshelf");bump()},ns:true,keys:"automatic stack versions stores steam epic duplicate"})));
+  out.push(H("Auto-detect duplicates"));
   const chk=verRow(s.rows,"chk",()=>A("Find same-game versions","","Scan PC stores, custom games and emulated consoles for matching game titles that aren't stacked yet.",verRunCheck,{ns:true,keys:"find same game versions check duplicates"}));
   chk.btn=s.busy?"Checking…":"Check now";chk.dim=!!s.busy;out.push(chk);
   if(s.checked){
@@ -1734,14 +1774,22 @@ function verManageRows(){
       mg.btn=`Stack (${nSel})`;mg.dim=nSel===0;out.push(mg);
     }
   }
-  out.push(H("Grouped games",{em:()=>L.length?`${L.length}`:""}));
-  if(!L.length)out.push(verRow(s.rows,"empty",()=>infoRow("No grouped games yet","",{text:"Use Check now above or open Details → ··· → Versions / Group… on any game."})));
-  else for(const st of L){
-    const pri=byId.get(st.primary)||byId.get(st.members[0]&&st.members[0].id);
-    const title=pri?pri.title:(st.members[0]&&st.members[0].id)||st.id;
-    const subText=(st.members||[]).map(m=>m.label||((byId.get(m.id)||{}).label)||m.id).join(" · ");
-    const r=verRow(s.rows,"st|"+st.id,()=>A(title,"Manage…","Change the primary box, rename version labels, add/remove versions, or ungroup.",()=>openGameVersions({id:st.primary,title}),{ns:true,sub:()=>({text:subText}),keys:"grouped version stack "+title.toLowerCase()}));
-    r.label=title;out.push(r);
+  const totalGrp=L.length+autos.length;
+  out.push(H("Grouped games",{em:()=>totalGrp?`${totalGrp}`:""}));
+  if(!totalGrp)out.push(verRow(s.rows,"empty",()=>infoRow("No grouped games yet","",{text:"Use Check now above or open Details → ··· → Versions / Group… on any game."})));
+  else{
+    for(const st of L){
+      const pri=byId.get(st.primary)||byId.get(st.members[0]&&st.members[0].id);
+      const title=pri?pri.title:(st.members[0]&&st.members[0].id)||st.id;
+      const subText=(st.members||[]).map(m=>m.label||((byId.get(m.id)||{}).label)||m.id).join(" · ");
+      const r=verRow(s.rows,"st|"+st.id,()=>A(title,"Manage…","Change the primary box, rename version labels, add/remove versions, or ungroup.",()=>openGameVersions({id:st.primary,title}),{ns:true,sub:()=>({text:subText}),keys:"grouped version stack "+title.toLowerCase()}));
+      r.label=title;out.push(r);
+    }
+    for(const ag of autos){
+      const subText=ag.members.map(m=>m.label).join(" · ");
+      const r=verRow(s.rows,"auto|"+ag.key,()=>A(ag.title,"Manage…","Auto-grouped across stores/platforms. Change primary box, rename labels, or ungroup.",()=>openGameVersions({id:ag.primary,title:ag.title,autoKey:ag.key,autoVersions:ag.members}),{ns:true,sub:()=>({text:subText}),keys:"auto grouped version "+ag.title.toLowerCase()}));
+      r.label=ag.title;out.push(r);
+    }
   }
   return out;
 }
@@ -1751,28 +1799,28 @@ function gvRows(){
   const members=st?st.members:s.draft,curPri=()=>st?st.primary:s.draftPrimary;
   const defLbl=id=>{const g=s.byId.get(id);return (g&&g.label)||(g&&g.shelfName)||"Version"};
   const getLbl=id=>{const m=(st?st.members:s.draft).find(x=>x.id===id);return (m&&m.label)||defLbl(id)};
-  const setPri=id=>{const cur=verStacks().find(x=>x&&x.members.some(m=>m.id===s.gid));if(cur){cur.primary=id;verCommit()}else{s.draftPrimary=id;bump()}};
-  const setLbl=(id,v)=>{const clean=String(v||"").replace(/\s+/g," ").trim().slice(0,60);const cur=verStacks().find(x=>x&&x.members.some(m=>m.id===s.gid));const ms=cur?cur.members:s.draft;const m=ms.find(x=>x.id===id);if(!m)return;m.label=clean||defLbl(id);if(cur)verCommit();else bump()};
-  const rmMem=id=>{const stacks=verStacks(),idx=stacks.findIndex(x=>x&&x.members.some(m=>m.id===s.gid));if(idx<0)return;const cur=stacks[idx];cur.members=cur.members.filter(x=>x.id!==id);
-    if(cur.members.length<2){const keep=cur.members[0]||{id:s.gid,label:defLbl(s.gid)};stacks.splice(idx,1);s.gid=keep.id;s.draft=[keep];s.draftPrimary=keep.id;toast("Versions ungrouped")}
+  const promote=()=>{const stacks=verStacks();let cur=stacks.find(x=>x&&x.members.some(m=>m.id===s.gid));if(!cur&&s.draft.length>=2){verSkipKey(s.autoKey,false);cur={id:"v"+Date.now().toString(36),primary:s.draftPrimary,members:clone(s.draft)};stacks.push(cur);s.isAuto=false}return cur};
+  const setPri=id=>{const cur=verStacks().find(x=>x&&x.members.some(m=>m.id===s.gid))||(s.draft.length>=2?promote():null);if(cur){cur.primary=id;verCommit()}else{s.draftPrimary=id;bump()}};
+  const rmMem=id=>{const stacks=verStacks();let idx=stacks.findIndex(x=>x&&x.members.some(m=>m.id===s.gid));if(idx<0&&s.draft.length>=2){promote();idx=stacks.findIndex(x=>x&&x.members.some(m=>m.id===s.gid))}if(idx<0)return;const cur=stacks[idx];cur.members=cur.members.filter(x=>x.id!==id);
+    if(cur.members.length<2){const keep=cur.members[0]||{id:s.gid,label:defLbl(s.gid)};stacks.splice(idx,1);s.gid=keep.id;s.draft=[keep];s.draftPrimary=keep.id;s.isAuto=false;verSkipKey(s.autoKey,true);toast("Versions ungrouped")}
     else if(cur.primary===id){cur.primary=cur.members[0].id;if(s.gid===id)s.gid=cur.primary}
     else if(s.gid===id)s.gid=cur.primary;verCommit()};
-  const ungroup=()=>{const stacks=verStacks(),idx=stacks.findIndex(x=>x&&x.members.some(m=>m.id===s.gid));if(idx<0)return;const cur=stacks[idx],kept=cur.members.find(x=>x.id===s.gid)||cur.members[0];
-    stacks.splice(idx,1);s.gid=kept.id;s.draft=[kept];s.draftPrimary=kept.id;toast("Versions ungrouped");verCommit()};
+  const ungroup=()=>{const stacks=verStacks(),idx=stacks.findIndex(x=>x&&x.members.some(m=>m.id===s.gid));let kept={id:s.gid,label:defLbl(s.gid)};if(idx>=0){const cur=stacks[idx];kept=cur.members.find(x=>x.id===s.gid)||cur.members[0];stacks.splice(idx,1)}else if(s.draft.length){kept=s.draft.find(x=>x.id===s.gid)||s.draft[0]}
+    s.gid=kept.id;s.draft=[kept];s.draftPrimary=kept.id;s.isAuto=false;verSkipKey(s.autoKey,true);toast("Versions ungrouped");verCommit()};
   const addMem=g=>{const id=String(g.id),lbl=g.label||g.shelfName||"Version",stacks=verStacks(),cur=stacks.find(x=>x&&x.members.some(m=>m.id===s.gid));
-    if(cur){if(cur.members.length>=20||cur.members.some(x=>x.id===id))return;cur.members.push({id,label:lbl});toast(`Added ${g.title} (${lbl})`);verCommit()}
-    else{if(!s.draft.some(x=>x.id===id))s.draft.push({id,label:lbl});if(s.draft.length>=2){stacks.push({id:"v"+Date.now().toString(36),primary:s.draftPrimary,members:clone(s.draft)});toast(`Stacked ${lbl} with ${s.title}`);verCommit()}else bump()}};
+    if(cur){if(cur.members.length>=20||cur.members.some(x=>x.id===id))return;verSkipKey(s.autoKey,false);cur.members.push({id,label:lbl});toast(`Added ${g.title} (${lbl})`);verCommit()}
+    else{if(!s.draft.some(x=>x.id===id))s.draft.push({id,label:lbl});if(s.draft.length>=2){verSkipKey(s.autoKey,false);stacks.push({id:"v"+Date.now().toString(36),primary:s.draftPrimary,members:clone(s.draft)});s.isAuto=false;toast(`Stacked ${lbl} with ${s.title}`);verCommit()}else bump()}};
   const out=[H("Included versions",{em:()=>`${members.length}`})];
   for(const m of members){
     const g=s.byId.get(m.id),title=(g&&g.title)||m.id,shelfName=(g&&g.shelfName)||"",isPri=curPri()===m.id;
     const pr=verRow(s.rows,"pri|"+m.id,()=>A(title,"","Primary version supplies the box cover on the shelf.",()=>setPri(m.id),{ns:true,sub:()=>({text:[shelfName,curPri()===m.id?"Primary version":""].filter(Boolean).join(" · ")}),keys:"primary version "+title.toLowerCase()}));
     pr.label=title;pr.btn=isPri?"Primary":"Make primary";pr.dim=!!isPri;out.push(pr);
     const lb=verRow(s.rows,"lbl|"+m.id,()=>X("Version label","","Shown when choosing which version to play (e.g. PC, Switch, 2026).",
-      {get:()=>getLbl(m.id),set:v=>{const clean=String(v||"").replace(/\s+/g," ").trim().slice(0,60);const cur=verStacks().find(x=>x&&x.members.some(y=>y.id===s.gid));const ms=cur?cur.members:s.draft;const mm=ms.find(y=>y.id===m.id);if(mm)mm.label=clean||defLbl(m.id)},live:()=>verCommit(),nosave:true,ns:true,keys:"version label"}));
+      {get:()=>getLbl(m.id),set:v=>{const clean=String(v||"").replace(/\s+/g," ").trim().slice(0,60);const cur=verStacks().find(x=>x&&x.members.some(y=>y.id===s.gid))||(s.draft.length>=2?promote():null);const ms=cur?cur.members:s.draft;const mm=ms.find(y=>y.id===m.id);if(mm)mm.label=clean||defLbl(m.id)},live:()=>verCommit(),nosave:true,ns:true,keys:"version label"}));
     out.push(lb);
     if(members.length>=2)out.push(verRow(s.rows,"rm|"+m.id,()=>A("Remove from group","Remove","Take this version out of the group (keeps the game on its own shelf).",()=>rmMem(m.id),{ns:true,keys:"remove version"})));
   }
-  if(st)out.push(verRow(s.rows,"ungroup",()=>A("Ungroup all","Ungroup","Separate all versions in this group back into individual shelf boxes.",ungroup,{ns:true,keys:"ungroup all versions"})));
+  if(st||s.draft.length>=2)out.push(verRow(s.rows,"ungroup",()=>A("Ungroup all","Ungroup","Separate all versions in this group back into individual shelf boxes.",ungroup,{ns:true,keys:"ungroup all versions"})));
   out.push(H("Add another version"));
   out.push(verRow(s.rows,"search",()=>X("Search games to add","","Type any part of a game title from PC or a console to stack with this game.",
     {get:()=>s.q,set:v=>{s.q=String(v||"")},live:()=>bump(),nosave:true,ns:true,ph:"Ocarina, Zelda, Super Mario…",keys:"search add game version"})));
