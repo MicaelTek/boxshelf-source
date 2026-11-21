@@ -13,8 +13,8 @@ const crypto = require('crypto');
 const GAP = 300, MEMO = 30 * 60e3, MEMO_N = 200, RETRY = 30 * 864e5;
 // IGDB's platform ids for Boxshelf's consoles (the search is narrowed to the game's console)
 const PLAT = { gc: 21, wii: 5, wiiu: 41, sw: 130, psx: 7, ps2: 8, ps3: 9, ps4: 48, psp: 38, psvita: 46, n64: 4, snes: 19, nes: 18, gba: 24, gb: 33, gbc: 22, nds: 20, n3ds: 37,
-  megadrive: 29, saturn: 32, dreamcast: 23, mastersystem: 64, gamegear: 35, pcengine: 86, x360: 12, xbox: 11, segacd: 78, sega32x: 30, atari2600: 59, atarilynx: 61, wonderswan: 57, neogeo: 80, dos: 13 };
-const FIELDS = 'name,summary,first_release_date,total_rating,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,franchise.name,franchises.name,screenshots.image_id';
+  megadrive: 29, saturn: 32, dreamcast: 23, mastersystem: 64, gamegear: 35, pcengine: 86, x360: 12, xbox: 11, segacd: 78, sega32x: 30, atari2600: 59, atarilynx: 61, wonderswan: 57, neogeo: 80, dos: 13, pc: 6 };
+const FIELDS = 'name,summary,cover.image_id,first_release_date,total_rating,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,franchise.name,franchises.name,screenshots.image_id';
 const titleOf = g => String((g && g.title) || '').replace(/\s*[([].*?[)\]]/g, '').replace(/["\\]/g, '').trim();
 
 // ---------- the client: the token, the queue, one lookup per game ----------
@@ -85,6 +85,7 @@ function client(o) {
 // ---------- what an answer holds ----------
 const SHOT_ID = /^[a-z0-9]+$/i;
 function shotsOf(hit) { return (hit && Array.isArray(hit.screenshots) ? hit.screenshots : []).filter(s => s && SHOT_ID.test(String(s.image_id || ''))).map(s => `https://images.igdb.com/igdb/image/upload/t_screenshot_huge/${s.image_id}.jpg`); }
+function coverOf(hit) { return hit && hit.cover && SHOT_ID.test(String(hit.cover.image_id || '')) ? `https://images.igdb.com/igdb/image/upload/t_cover_big/${hit.cover.image_id}.jpg` : null; }
 const str = v => (typeof v === 'string' ? v.trim() : '');
 const uniq = L => [...new Set(L.filter(Boolean))];
 // the fields Details shows, in LaunchBox's shapes: genres "A; B", release "YYYY-MM-DD", year a number, rating out of 5
@@ -147,4 +148,4 @@ async function lookupInfo(c, sysId, game) {
   return get(sysId, game);
 }
 
-module.exports = { client, shotsOf, infoOf, fill, init, get, due, put, merge, gaps, lookupInfo, flush, PLAT, RETRY, _t: { keyOf, load: () => load() } };
+module.exports = { client, shotsOf, coverOf, infoOf, fill, init, get, due, put, merge, gaps, lookupInfo, flush, PLAT, RETRY, _t: { keyOf, load: () => load() } };
