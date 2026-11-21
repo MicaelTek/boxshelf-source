@@ -2613,7 +2613,7 @@ const igdbScore = x => (x.summary ? 4 : 0) + (Array.isArray(x.screenshots) && x.
 function igdbInit() {
   if (igdbMod) return igdbMod; const I = require('./main/igdb');
   I.init({ dataDir: app.getPath('userData'), log });
-  const client = I.client({ keys: () => { const k = (cfg && cfg.keys) || {}; return { id: k.igdbId, secret: k.igdbSecret }; }, fetch: (u, o) => net.fetch(u, o), match: (list, g) => covers.matchTitle(list.map(x => ({ ...x, n: covers.norm(x.name) })), g.title, igdbScore) });
+  const client = I.client({ keys: () => { const k = (cfg && cfg.keys) || {}; return { id: k.igdbId, secret: k.igdbSecret }; }, fetch: (u, o) => net.fetch(u, o), match: (list, g) => covers.matchTitle(list.map(x => ({ ...x, n: covers.norm(x.name), year: x.first_release_date ? new Date(x.first_release_date * 1000).getUTCFullYear() : 0 })), g.title, igdbScore) });
   return (igdbMod = Object.assign({}, I, { client }));
 }
 async function lookupPcIgdb(I, id, title, isCustom) {
