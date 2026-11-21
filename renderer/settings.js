@@ -1421,7 +1421,7 @@ async function addPlaynite(dir){ADD.busy=true;ADD.list=null;ADD.pn=null;addReset
 async function pnImport(){const P=ADD.pn;if(!P||ADD.busy)return;ADD.busy=true;const pc=pcCfg(),have=new Set(pc.custom.map(c=>String(c.exe).toLowerCase())),covers=[];let n=0,dirs=0;
   try{
     if(ADD.pnOn.pc)for(const g of P.pc){if(!ADD.pnPick.has(g.key)||have.has(String(g.exe).toLowerCase()))continue;const id="pn-"+addSlug(g.key).slice(0,40);
-      pc.custom.push({id,title:g.title,exe:g.exe,args:g.args||"",src:"playnite"});have.add(String(g.exe).toLowerCase());n++;if(g.cover)covers.push({id,file:g.cover});
+      pc.custom.push({id,title:g.title,exe:g.exe,args:g.args||"",src:"playnite"});have.add(String(g.exe).toLowerCase());n++;if(g.cover||g.bg)covers.push({id,...(g.cover?{file:g.cover}:{}),...(g.bg?{bg:g.bg}:{})});
       if(g.favorite){const fav=cfg.ui.favorites=Array.isArray(cfg.ui.favorites)?cfg.ui.favorites:[];const fid="custom-"+addSlug(id);if(!fav.includes(fid))fav.push(fid)}}
     pc.pnDirs=pc.pnDirs||{};
     for(const [sys,c] of Object.entries(P.consoles||{})){if(!ADD.pnOn[sys]||!cfg.systems[sys])continue;const sc=sysCfg(sys);
