@@ -84,15 +84,17 @@ function read(found) {
   return new Promise((resolve, reject) => {
     if (process.platform !== 'win32') return reject(new Error('Playnite runs on Windows'));
     const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'bs-playnite-'));
-    try { for (const n of ['games.db', 'platforms.db', 'emulators.db']) { const f = path.join(found.library, n); if (isFile(f)) fs.copyFileSync(f, path.join(copy, n)); } }
+    const dbs = ['games.db', 'platforms.db', 'emulators.db', 'companies.db', 'genres.db', 'categories.db', 'series.db'];
+    try { for (const n of dbs) { const f = path.join(found.library, n); if (isFile(f)) fs.copyFileSync(f, path.join(copy, n)); } }
     catch (e) { fs.rmSync(copy, { recursive: true, force: true }); return reject(new Error('Playnite\'s library couldn\'t be copied (' + (e.code || e.message) + ')')); }
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', PS], { windowsHide: true, timeout: 120e3, maxBuffer: 256 << 20, env: { ...process.env, BS_PN_APP: found.app, BS_PN_COPY: copy } }, (err, out, errOut) => {
       fs.rmSync(copy, { recursive: true, force: true });
       if (err) { log('Playnite read failed:', (errOut || err.message).toString().split('\n')[0]); return reject(new Error('Playnite\'s library couldn\'t be read with this Playnite version')); }
-      const lib = { games: [], platforms: [], emulators: [] }, unwrap = v => Array.isArray(v) ? v.map(unwrap) : v && typeof v === 'object' ? (v.$guid || v.$date || v.$numberLong || v.$oid ? (v.$guid || v.$date || +v.$numberLong || v.$oid) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unwrap(x)]))) : v;
+      const lib = { games: [], platforms: [], emulators: [], companies: [], genres: [], categories: [], series: [] };
+      const unwrap = v => Array.isArray(v) ? v.map(unwrap) : v && typeof v === 'object' ? (v.$guid || v.$date || v.$numberLong || v.$oid ? (v.$guid || v.$date || +v.$numberLong || v.$oid) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unwrap(x)]))) : v;
       for (const line of String(out).split(/\r?\n/)) {
         const m = /^([^|]+)\|([^|]+)\|(.*)$/.exec(line); if (!m) continue; let d; try { d = unwrap(JSON.parse(m[3])); } catch { continue; }
-        const db = m[1].toLowerCase(); if (db === 'games') lib.games.push(d); else if (db === 'platforms') lib.platforms.push(d); else if (db === 'emulators') lib.emulators.push(d);
+        const db = m[1].toLowerCase(); if (db in lib) lib[db].push(d);
       }
       log('Playnite library read:', lib.games.length, 'games,', lib.platforms.length, 'platforms,', lib.emulators.length, 'emulators');
       resolve(lib);
@@ -149,8 +151,28 @@ function plan(lib, found) {
 const PN_STORE = { 'cb91dfc9-b977-43bf-8e70-55f46e410fab': 'steam', '00000002-dbd1-46c6-b5d0-b1ba559d10e4': 'epic', 'aebe8b7c-6dc3-4a66-af31-e7375c6b5e9e': 'gog',
   '85dd7072-2f20-4e76-a007-41035e390724': 'ea', 'c2f038e5-8b92-4877-91f1-da9094155fc5': 'ubisoft', '7e4fbb5e-2ae3-48d4-8ba0-6b30e7a4e287': 'xbox',
   'e3c26a3d-d695-4cb7-a769-5ff7612c7edd': 'battlenet' }; // (a store not listed is 'other': it installs through Playnite all the same)
+function cleanDesc(s) {
+  if (!s || typeof s !== 'string') return '';
+  return s
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+    .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim().slice(0, 2400);
+}
+function relParts(v) {
+  if (!v) return {};
+  const s = typeof v === 'object' ? String(v.ReleaseDate || '') : String(v);
+  const m = /^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?/.exec(s.trim());
+  if (!m) return {};
+  const year = m[1], release = m[2] && m[3] ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : m[2] ? `${m[1]}-${m[2].padStart(2, '0')}-01` : year;
+  return { year, release };
+}
 function owned(lib, found) {
   const out = [];
+  const byId = list => { const m = new Map(); for (const x of list || []) { const id = String((x && (x.Id || x._id)) || '').toLowerCase(); if (id && x.Name) m.set(id, String(x.Name).trim()); } return m; };
+  const companies = byId(lib.companies), genres = byId(lib.genres), categories = byId(lib.categories), series = byId(lib.series);
+  const names = (ids, map) => Array.isArray(ids) ? ids.map(id => map.get(String(id || '').toLowerCase())).filter(Boolean) : [];
   const media = v => { if (!v || /^https?:/i.test(v)) return null; const f = path.win32.isAbsolute(v) ? v : path.join(found.library, 'files', ...String(v).split(/[\\/]/)); return isFile(f) ? f : null; };
   for (const g of lib.games) {
     if (!g || !g.Name || g.Hidden || g.IsInstalled) continue;
@@ -158,7 +180,40 @@ function owned(lib, found) {
     const store = PN_STORE[plug] || 'other', pid = String(g.Id || g._id || ''), gid = String(g.GameId || '');
     if (!/^[0-9a-f-]{36}$/i.test(pid)) continue;
     const uri = store === 'steam' && /^\d{1,10}$/.test(gid) ? 'steam://install/' + gid : 'playnite://playnite/start/' + pid;
-    out.push({ key: pid, title: String(g.Name).slice(0, 120), store, uri, appid: store === 'steam' && /^\d{1,10}$/.test(gid) ? gid : undefined, cover: media(g.CoverImage), favorite: !!g.Favorite });
+    const dev = names(g.DeveloperIds, companies).join(', ') || undefined;
+    const pub = names(g.PublisherIds, companies).join(', ') || undefined;
+    const gGenres = names(g.GenreIds, genres).join('; ') || undefined;
+    const cats = names(g.CategoryIds, categories);
+    const ser = g.SeriesId ? (series.get(String(g.SeriesId).toLowerCase()) || undefined) : undefined;
+    const { year, release } = relParts(g.ReleaseDate);
+    const overview = cleanDesc(g.Description) || undefined;
+    const metacritic = Number.isFinite(+g.CriticScore) && +g.CriticScore > 0 ? Math.round(+g.CriticScore) : undefined;
+    const rating = Number.isFinite(+g.CommunityScore) && +g.CommunityScore > 0 ? Math.round((+g.CommunityScore / 20) * 10) / 10 : undefined;
+    const info = {};
+    if (overview) info.overview = overview;
+    if (release) info.release = release;
+    if (year) info.year = year;
+    if (dev) info.dev = dev;
+    if (pub) info.pub = pub;
+    if (gGenres) info.genres = gGenres;
+    if (metacritic) info.metacritic = metacritic;
+    if (rating) info.rating = rating;
+    if (ser) info.series = ser;
+    const minutes = Number.isFinite(+g.Playtime) && +g.Playtime > 0 ? Math.round(+g.Playtime / 60) : undefined;
+    const lpMs = g.LastActivity ? Date.parse(String(g.LastActivity)) : NaN;
+    const lastPlayed = !isNaN(lpMs) && lpMs > 0 ? Math.floor(lpMs / 1000) : undefined;
+    const bg = media(g.BackgroundImage);
+    out.push({
+      key: pid, title: String(g.Name).slice(0, 120), store, uri,
+      appid: store === 'steam' && /^\d{1,10}$/.test(gid) ? gid : undefined,
+      cover: media(g.CoverImage),
+      ...(bg ? { bg } : {}),
+      ...(Object.keys(info).length ? { info } : {}),
+      ...(cats.length ? { categories: cats } : {}),
+      ...(minutes ? { minutes } : {}),
+      ...(lastPlayed ? { lastPlayed } : {}),
+      favorite: !!g.Favorite,
+    });
   }
   out.sort((a, b) => a.title.localeCompare(b.title));
   return out;
