@@ -100,16 +100,17 @@ async function madeSpine(front, job) {
     // no transparency: a picture, not a logo; a squarish logo (stacked words, a badge) would be tiny across a thin spine:
     // the title in type reads better
     if (ink > .92 || logo.width / logo.height < 2.4) { logo.close(); logo = null; light = true; } }
-  // the console's own spine colour (job.lightBody: Nintendo, Xbox 360, PS5 are light; PS2 / PS3 / PSP / GameCube dark);
-  // a light logo on a light spine gets the dark one, tinted with the cover's colour, so it always reads
+  // the console's own spine colour (Switch/Switch 2: full Nintendo red spine; Nintendo, Xbox 360, PS5: light; PS2 / PS3 / PSP / GameCube: dark)
+  const isSwitch = /switch/i.test(String(band.label || ''));
   const dark = `rgb(${Math.round(fr * .22 + 10)},${Math.round(fg * .22 + 10)},${Math.round(fb * .22 + 12)})`;
-  const lightBody = logo ? !light : job.lightBody !== false;
-  const body = lightBody ? '#f2f2f0' : dark, ink2 = lightBody ? '#16161b' : '#ffffff';
+  const lightBody = isSwitch ? false : (logo ? !light : job.lightBody !== false);
+  const body = isSwitch ? (band.bg || '#e60012') : (lightBody ? '#f2f2f0' : dark), ink2 = isSwitch ? (band.fg || '#ffffff') : (lightBody ? '#16161b' : '#ffffff');
   g.fillStyle = body; g.fillRect(0, 0, W, H);
   // a soft sheen across the width, as on a printed spine
   const sh = g.createLinearGradient(0, 0, W, 0); sh.addColorStop(0, 'rgba(0,0,0,.18)'); sh.addColorStop(.18, 'rgba(255,255,255,.05)'); sh.addColorStop(.82, 'rgba(255,255,255,.03)'); sh.addColorStop(1, 'rgba(0,0,0,.2)'); g.fillStyle = sh; g.fillRect(0, 0, W, H);
   // the console's band, its name running down it
   const bh = Math.round(Math.max(W * 2.2, H * .15)); g.fillStyle = band.bg; g.fillRect(0, 0, W, bh);
+  if (isSwitch) { g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, bh - 2, W, 2); g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(0, bh, W, 1); }
   const down = (fn) => { g.save(); g.translate(W, 0); g.rotate(Math.PI / 2); fn(); g.restore(); }; // x = along the spine (down), y = across it (from the right edge)
   if (band.label) down(() => { g.fillStyle = band.fg; g.textAlign = 'center'; g.textBaseline = 'middle'; let fs = Math.round(W * .36); g.font = `800 ${fs}px ${F}`;
     while (fs > 8 && g.measureText(band.label.toUpperCase()).width > bh * .86) { fs--; g.font = `800 ${fs}px ${F}`; } g.fillText(band.label.toUpperCase(), bh / 2, W / 2 + 1); });
@@ -119,9 +120,16 @@ async function madeSpine(front, job) {
     while (fs > 7 && g.measureText(t).width > footH * .9) { fs--; g.font = `700 ${fs}px ${F}`; } g.fillText(t, H - footH / 2, W / 2 + 1); });
   // the logo or title in the space between
   const x0 = bh + Math.round(H * .025), x1 = H - footH - Math.round(H * .02), len = x1 - x0, across = W * .78;
-  if (logo) down(() => { const s = Math.min(len / logo.width, across / logo.height), w = logo.width * s, h = logo.height * s;
-    if (!light) { g.shadowColor = 'rgba(0,0,0,0)'; } else { g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = Math.round(W * .06); }
-    g.drawImage(logo, x0 + (len - w) / 2, (W - h) / 2, w, h); });
+  let drawLogo = logo;
+  if (logo && isSwitch && !light) {
+    const lc = document.createElement('canvas'); lc.width = logo.width; lc.height = logo.height;
+    const lx = lc.getContext('2d'); lx.drawImage(logo, 0, 0);
+    lx.globalCompositeOperation = 'source-in'; lx.fillStyle = ink2; lx.fillRect(0, 0, lc.width, lc.height);
+    drawLogo = lc;
+  }
+  if (drawLogo) down(() => { const s = Math.min(len / drawLogo.width, across / drawLogo.height), w = drawLogo.width * s, h = drawLogo.height * s;
+    if (!light && !isSwitch) { g.shadowColor = 'rgba(0,0,0,0)'; } else { g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = Math.round(W * .06); }
+    g.drawImage(drawLogo, x0 + (len - w) / 2, (W - h) / 2, w, h); });
   else down(() => { g.fillStyle = ink2; g.textAlign = 'center'; g.textBaseline = 'middle'; const t = String(job.title || '').trim(); let fs = Math.round(W * .44); g.font = `800 ${fs}px ${F}`;
     while (fs > 9 && g.measureText(t).width > len) { fs--; g.font = `800 ${fs}px ${F}`; }
     if (g.measureText(t).width > len) { // two lines, split near the middle at a space

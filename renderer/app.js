@@ -1514,10 +1514,11 @@ async function pcCoverOpen(g,term,batch,part="front"){if(kidBlock())return;
   const card=document.createElement("div");card.className="bp-card";card.setAttribute("role","dialog");card.setAttribute("aria-label","Choose box art");
   const t=document.createElement("div");t.className="bp-title";t.textContent=batch?`Choose a cover · ${batch.i+1} of ${batch.list.length}`:"Box art";
   const sub=document.createElement("div");sub.className="bp-game";sub.textContent=g.title;
+  const sh=shelfFor(g),sysId=(sh&&sh.kind==="console"&&sh.id)||g.shelf||"pc",mWord=mediaWord(sysId),isCart=((MEDIA[sysId]||{}).kind==="cart");
   const bar=document.createElement("div");bar.className="cp-bar";
   const tabs=document.createElement("div");tabs.className="cp-tabs";tabs.hidden=!!batch;
   const tabBtns=new Map();
-  CP_PARTS.forEach(([pk,pl])=>{const tb=document.createElement("button");tb.type="button";tb.className="cp-tab";tb.textContent=pl;tb.addEventListener("click",()=>cpSetPart(pk));tabs.append(tb);tabBtns.set(pk,tb)});
+  CP_PARTS.forEach(([pk,pl])=>{const tb=document.createElement("button");tb.type="button";tb.className="cp-tab";tb.textContent=pk==="disc"?mWord:pl;tb.addEventListener("click",()=>cpSetPart(pk));tabs.append(tb);tabBtns.set(pk,tb)});
   const searchWrap=document.createElement("div");searchWrap.className="cp-search";searchWrap.hidden=!!batch;
   const searchIn=document.createElement("input");searchIn.type="text";searchIn.className="cp-input";searchIn.placeholder="Search by name…";searchIn.setAttribute("aria-label","Search by name");searchIn.value=term||"";
   const clearBtn=document.createElement("button");clearBtn.type="button";clearBtn.className="cp-clear";clearBtn.textContent="✕";clearBtn.title="Clear search";clearBtn.hidden=!String(term||"").trim();
@@ -1525,10 +1526,10 @@ async function pcCoverOpen(g,term,batch,part="front"){if(kidBlock())return;
   searchWrap.append(searchIn,clearBtn,searchBtn);
   bar.append(tabs,searchWrap);
   const note=document.createElement("div");note.className="cp-note";note.textContent="Looking for art…";
-  const grid=document.createElement("div");grid.className="cp-grid part-"+part;
+  const grid=document.createElement("div");grid.className="cp-grid part-"+part+(part==="disc"&&isCart?" is-cart":"");
   const f=document.createElement("div");f.className="bp-foot";f.textContent=batch?`${btnWord("a")} use · ${btnWord("back")} stop`:`${btnWord("a")} use · ${showPad()?`${padWord("L1")} / ${padWord("R1")}`:"Q / E"} part · ${btnWord("back")} back`;
   card.append(t,sub,bar,note,grid,f);el.append(card);el.addEventListener("click",e=>{if(e.target===el){cpDone();sfx.back()}});document.body.append(el);
-  cp={el,grid,note,tabBtns,input:searchIn,clearBtn,g,term:term||"",part,items:[],tiles:[],i:0,prev:mode==="details"?"browse":mode,busy:false,batch:batch||null,advance:false};if(mode==="details")closeDetails(true);mode="cover";
+  cp={el,grid,note,tabBtns,input:searchIn,clearBtn,g,sysId,mWord,isCart,term:term||"",part,items:[],tiles:[],i:0,prev:mode==="details"?"browse":mode,busy:false,batch:batch||null,advance:false};if(mode==="details")closeDetails(true);mode="cover";
   const runSearch=v=>{if(!cp||cp.busy)return;const q=String(v!=null?v:searchIn.value).replace(/\s+/g," ").trim().slice(0,120);cp.term=q;searchIn.value=q;clearBtn.hidden=!q;cpLoad(cp.part)};
   searchIn.addEventListener("input",()=>{clearBtn.hidden=!searchIn.value.trim()});
   searchIn.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();e.stopPropagation();runSearch();searchIn.blur()}else if(e.key==="Escape"){e.preventDefault();e.stopPropagation();searchIn.blur()}else{e.stopPropagation()}});
@@ -1540,10 +1541,10 @@ async function pcCoverOpen(g,term,batch,part="front"){if(kidBlock())return;
 function cpStepPart(d){if(!cp||cp.busy||cp.batch)return;const idx=CP_PARTS.findIndex(x=>x[0]===cp.part);const next=CP_PARTS[(idx+d+CP_PARTS.length)%CP_PARTS.length][0];cpSetPart(next)}
 function cpSetPart(part){if(!cp||cp.busy||cp.part===part)return;cp.part=part;play_("tick",{dir:1});cpLoad(part)}
 async function cpLoad(part){
-  if(!cp)return;const c=cp,g=c.g,term=c.term,batch=c.batch;
+  if(!cp)return;const c=cp,g=c.g,term=c.term,batch=c.batch,pw=part==="disc"&&c.isCart?"cartridge":part;
   c.tabBtns.forEach((b,k)=>b.classList.toggle("on",k===part));
-  c.grid.className="cp-grid part-"+part;c.grid.innerHTML="";c.items=[];c.tiles=[];c.i=0;
-  c.note.textContent=part==="front"?"Looking for covers…":`Looking for ${part} art…`;
+  c.grid.className="cp-grid part-"+part+(part==="disc"&&c.isCart?" is-cart":"");c.grid.innerHTML="";c.items=[];c.tiles=[];c.i=0;
+  c.note.textContent=part==="front"?"Looking for covers…":`Looking for ${pw} art…`;
   let r=null;try{r=await api.pcCoverOptions(g.id,term||"",part)}catch(e){if(cp===c&&cp.part===part&&cp.term===term)cp.note.textContent=String(e&&e.message||e);r={list:[],sgdb:true,current:false}}
   if(cp!==c||cp.part!==part||cp.term!==term)return;
   const items=[...(batch?[{act:"skip",icon:"→",label:"Skip this game",sub:batch.i+1<batch.list.length?"On to the next":"The last one"}]:[]),{act:"own",icon:"+",label:"A picture of yours",sub:"JPG, PNG or WebP"},...(r.current?[{act:"reset",icon:"↺",label:part==="front"?"Automatic cover":"Clear this part",sub:part==="front"?"Go back to it":"Remove custom art"}]:[]),
@@ -1556,8 +1557,8 @@ async function cpLoad(part){
       :r.sgdb?(ns?"Steam's own cover. SteamGridDB has none for this game.":"SteamGridDB has no covers for this game. Search by name, or use a picture of yours.")
       :ns?"Steam's own cover. For dozens more, add a free SteamGridDB key.":"No cover under this name on Steam. Search by name, use a picture of yours, or add a free SteamGridDB key for dozens more.";
   }else{
-    c.note.textContent=nlb||n?`${nlb+n} option${nlb+n===1?"":"s"} found, plus Boxshelf's own ${part} maker or a picture of yours.`
-      :`No ${part} scan found online yet. Generate one with Boxshelf, search another name, or use a picture of yours.`;
+    c.note.textContent=nlb||n?`${nlb+n} option${nlb+n===1?"":"s"} found, plus Boxshelf's own ${pw} maker or a picture of yours.`
+      :`No ${pw} scan found online yet. Generate one with Boxshelf, search another name, or use a picture of yours.`;
   }
   c.items=items;c.tiles=items.map((it,j)=>{const b=document.createElement("button");b.type="button";b.className="cp-tile";
     if(it.acct)b.classList.add("acct");
@@ -1571,14 +1572,15 @@ function cpCols(){const T=cp.tiles;if(T.length<2)return 1;const y=T[0].offsetTop
 function cpMove(dx,dy){if(!cp||!cp.tiles.length)return;const n=cp.tiles.length,j=Math.max(0,Math.min(n-1,cp.i+dx+dy*cpCols()));if(j!==cp.i){cp.i=j;play_("tick",{dir:dx||dy});cpRender()}}
 async function cpChoose(){if(!cp||cp.busy)return;const it=cp.items[cp.i],g=cp.g,term=cp.term,part=cp.part||"front",B=cp.batch;if(!it)return;cp.busy=true;
   const next=()=>{if(cp)cp.advance=true}; // (in a batch: this game is settled, on to the next one)
+  const pw=part==="disc"&&cp.isCart?"cartridge":part;
   try{
     if(it.act==="skip"){next();cpDone();play_("tick",{dir:1});return}
-    if(it.act==="own"){const r=await api.pcCoverOwn(g.id,part);if(r&&r.ok){if(B)B.done++;next();cpDone();play_("toast");if(!B)toast(`New ${part} art for ${g.title}`)}else if(cp)cp.busy=false;return}
+    if(it.act==="own"){const r=await api.pcCoverOwn(g.id,part);if(r&&r.ok){if(B)B.done++;next();cpDone();play_("toast");if(!B)toast(`New ${pw} art for ${g.title}`)}else if(cp)cp.busy=false;return}
     if(it.act==="search"){if(cp&&cp.input){cp.input.focus();cp.input.select()}return}
     if(it.act==="sgdb"){cpDone();play_("panel");cpReturn={id:g.id,term:term||"",part};Setup.open({page:"steamgriddb"});return} // (beta.9) the key's page; the picker again when Settings closes
-    if(it.act==="reset"){await api.pcCoverReset(g.id,part);next();cpDone();play_("toast");if(!B)toast(part==="front"?`${g.title} is back on its automatic cover`:`Removed ${part} art for ${g.title}`);return}
+    if(it.act==="reset"){await api.pcCoverReset(g.id,part);next();cpDone();play_("toast");if(!B)toast(part==="front"?`${g.title} is back on its automatic cover`:`Removed ${pw} art for ${g.title}`);return}
     if(it.key==="current"){next();cpDone();return}
-    cp.note.textContent=it.key==="made"?"Generating art…":"Downloading art…";await api.pcCoverUse(g.id,it.key,part);if(B)B.done++;next();cpDone();play_("toast");if(!B)toast(`New ${part} art for ${g.title}`);
+    cp.note.textContent=it.key==="made"?"Generating art…":"Downloading art…";await api.pcCoverUse(g.id,it.key,part);if(B)B.done++;next();cpDone();play_("toast");if(!B)toast(`New ${pw} art for ${g.title}`);
   }catch(e){if(cp){cp.busy=false;cp.note.textContent=String(e&&e.message||e)}play_("error")}
 }
 /* (beta.9) covers for every custom game at once (Recomps, ports, Quiver's games, programs added by hand or from Playnite:
@@ -4999,7 +5001,7 @@ function dvBuild(){
   // Media: the screenshots, then the box art as it is on file (Change in Art Studio)
   const media=sec("media"),sh=dvMk("div","dv-sh");sh.id="dvShotsH";sh.textContent="Screenshots";
   const tray=dvMk("div","dv-tray");tray.id="dvTray";
-  [["front","Front"],["back","Back"],["spine","Spine"],["disc","Disc"],["manual","Manual"]].forEach(([k,l])=>{const o=dvMk("div","dv-obj",`<div class="dv-art"><i class="dv-${k}"></i></div><b></b><small></small>`);o.dataset.o=k;o.querySelector("b").textContent=l;tray.append(o);dv.obj[k]=o});
+  [["front","Front"],["back","Back cover"],["spine","Spine"],["disc","Disc"],["manual","Manual"]].forEach(([k,l])=>{const o=dvMk("div","dv-obj",`<div class="dv-art"><i class="dv-${k}"></i></div><b></b><small></small>`);o.dataset.o=k;o.querySelector("b").textContent=l;tray.append(o);dv.obj[k]=o});
   const chg=dvMk("button","dv-btn");chg.type="button";chg.id="dvArtBtn";chg.textContent="Change in Art Studio";chg.addEventListener("click",()=>{const g=curGame();dvPress(g&&g.kind==="steam"?"dBoxArtPc":"dBoxArt")});tray.append(chg);
   const artH=dvMk("div","dv-sh");artH.textContent="Box art";const artBox=dvMk("div","dv-artbox");artBox.id="dvArtBox";artBox.append(artH,tray);
   /* (beta.14) a game short of screenshots, IGDB not connected: one quiet line to its Settings page */
@@ -5071,11 +5073,11 @@ async function dvSetStatus(g,v){if(!g||!isGame(g)||!api.gameStatus)return;v=v||"
 const dvAgo=t=>{const d=Math.floor((Date.now()-t)/864e5);return d<1?"today":d<2?"yesterday":d<14?d+" days ago":d<61?Math.round(d/7)+" weeks ago":d<730?Math.round(d/30.4)+" months ago":Math.round(d/365)+" years ago"};
 // Media: the box, spine, disc and manual as they are on file (decoded first, only while Media shows)
 function dvArt(g){if(!g||(g.kind!=="rom"&&g.kind!=="steam"))return;const a=g.art||{},rom=g.kind==="rom",s=shelfFor(g),st=stOf(g),man=Array.isArray(a.manual)?a.manual:[],same=dv.gid===String(g.id);dv.gid=String(g.id);
-  const no="No scan yet",O={front:[!!a.front,a.front?"On file":no,frontUrl(g)],back:[!!a.back,a.back?"On file":no,a.back],spine:[!!a.spine,a.spine?"On file":no,a.spine],
+  const no="No scan yet",mKind=(s&&MEDIA[s.id]&&MEDIA[s.id].kind)||"disc",isCart=mKind==="cart",O={front:[!!a.front,a.front?"On file":no,frontUrl(g)],back:[!!a.back,a.back?"On file":no,a.back],spine:[!!a.spine,a.spine?"On file":no,a.spine],
     disc:[!!a.disc,a.disc?"On file":no,a.disc],manual:[man.length>0,man.length?`${man.length} pages`:g.manualMiss?"None found online":"Not yet",man[0]]};
   for(const k of Object.keys(O)){const [ok,txt,u]=O[k],o=dv.obj[k],pic=o.querySelector(".dv-art i"),sm=o.querySelector("small");
     if(k==="manual")o.hidden=!rom;
-    o.classList.toggle("miss",!ok);sm.textContent=txt;sm.classList.toggle("ok",ok);if(k==="disc")o.querySelector("b").textContent=s?mediaWord(s.id):"Disc";
+    o.classList.toggle("miss",!ok);pic.classList.toggle("has-pic",!!ok);sm.textContent=txt;sm.classList.toggle("ok",ok);if(k==="disc"){o.querySelector("b").textContent=s?mediaWord(s.id):"Disc";pic.classList.toggle("is-cart",isCart)}
     if(k==="spine"){const sb=st.spineBand||{};pic.style.setProperty("--sb",sb.bg||"#2c2c35");pic.style.setProperty("--sf",sb.fg||"#c3c3cf");pic.textContent=a.spine?"":g.title}
     const want=typeof u==="string"&&u?thumb(u,k==="spine"||k==="disc"?160:220):"";if(!same)pic.style.backgroundImage="";pic.dataset.want=want;
     dvPic(want,x=>{if(pic.dataset.want===x)pic.style.backgroundImage=x?dvUrl(x):""})}

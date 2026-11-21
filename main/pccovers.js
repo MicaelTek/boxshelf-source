@@ -120,18 +120,19 @@ async function options(game, part = 'front') {
   }
 
   if (p !== 'front' && o.makePart) {
+    const isCartShelf = new Set(['sw', 'sw2', 'n3ds', 'nds', 'gba', 'gbc', 'gb', 'n64', 'snes', 'nes', 'megadrive', 'mastersystem', 'gamegear', 'pcengine', 'neogeo', 's32x', 'atari2600', 'lynx', 'wonderswan']).has(String(game.shelf || ''));
     const madeInfo = {
       back: { label: 'Back made by Boxshelf', sub: 'Cover, screenshots & synopsis' },
       spine: { label: 'Spine made by Boxshelf', sub: 'Cover colour & game logo' },
-      disc: { label: 'Disc made by Boxshelf', sub: 'Cover art & game logo' }
+      disc: isCartShelf ? { label: 'Cartridge made by Boxshelf', sub: 'Cover art & game card' } : { label: 'Disc made by Boxshelf', sub: 'Cover art & game logo' }
     }[p];
     const frontChosen = cover(id, 'front');
     let frontStamp = '';
     if (frontChosen) { try { frontStamp = String(Math.floor(fs.statSync(frontChosen).mtimeMs)); } catch {} }
-    const madeBase = path.join(cacheDir(), 'made-' + p + '-' + sha(`${id}|${game.title || ''}|${game.appid || ''}|${frontChosen || ''}|${frontStamp}`));
+    const madeBase = path.join(cacheDir(), 'made-' + p + '-' + sha(`${id}|${game.title || ''}|${game.appid || ''}|${game.shelf || ''}|${frontChosen || ''}|${frontStamp}`));
     let madeFile = null;
     for (const e of EXTS) if (isFile(madeBase + '.' + e)) { madeFile = madeBase + '.' + e; break; }
-    const madeGame = { id, title: game.title, appid: game.appid, term: !!game.term };
+    const madeGame = { id, title: game.title, appid: game.appid, ...(game.shelf ? { shelf: game.shelf } : {}), term: !!game.term };
     if (!madeFile) {
       try {
         const r = await o.makePart(p, madeGame);
@@ -150,7 +151,7 @@ async function options(game, part = 'front') {
   }
 
   last.set(id + '|' + p, keys);
-  return { list, sgdb, current: !!mine, part: p };
+  return { list, sgdb, current: !!mine, part: p, shelf: game.shelf || '' };
 }
 
 // use one of the last options (by key) as the game's art for one part
@@ -294,4 +295,4 @@ async function downloadBestFront(game, rankFn, onBeforeSave) {
   return saveFirstFrontCand(id, rest, onBeforeSave);
 }
 
-module.exports = { init, cover, art, thumb, options, use, own, downloadBestFront, reset: (id, part = 'front') => clear(String(id), part), PARTS, SUFFIX };
+module.exports = { init, cover, art, save, thumb, options, use, own, downloadBestFront, reset: (id, part = 'front') => clear(String(id), part), PARTS, SUFFIX };
