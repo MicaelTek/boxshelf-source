@@ -41,13 +41,31 @@ async function save(id, buf, ext, part = 'front') {
 // a thumbnail, fetched once into the cache (three at a time); null when it couldn't be fetched
 let slots = 3; const waiting = [];
 async function slot(fn) { if (slots > 0) slots--; else await new Promise(r => waiting.push(r)); try { return await fn(); } finally { const n = waiting.shift(); if (n) n(); else slots++; } }
-async function thumb(url) {
+async function thumb(url, cut, sysId) {
   if (!url) return null;
-  const f = path.join(cacheDir(), sha(url));
+  const cacheKey = cut ? `${url}|${cut}|${sysId || ''}` : url;
+  const f = path.join(cacheDir(), sha(cacheKey));
   for (const e of EXTS) if (isFile(f + '.' + e)) return f + '.' + e;
   // (beta.10) only a picture is kept, and through a temp name: a cached thumbnail is trusted whenever it's there
-  return slot(async () => { const b = await o.fetchImage(url); if (!b || !isImg(b)) return null; fs.mkdirSync(cacheDir(), { recursive: true }); const p = f + '.' + extOf(url, b), tmp = p + '.tmp';
-    try { await fs.promises.writeFile(tmp, b); await fs.promises.rename(tmp, p); } catch (e) { await fs.promises.unlink(tmp).catch(() => {}); o.log('PC cover: thumbnail not saved', e.message); return null; } return p; });
+  return slot(async () => {
+    let b = await o.fetchImage(url);
+    if (!b || !isImg(b)) return null;
+    let outExt = extOf(url, b);
+    if (cut && o.cutSpine) {
+      fs.mkdirSync(cacheDir(), { recursive: true });
+      const tmpCut = path.join(cacheDir(), '.tcut-' + process.pid + '-' + sha(cacheKey) + '.' + outExt);
+      try {
+        await fs.promises.writeFile(tmpCut, b);
+        const cb = await o.cutSpine(tmpCut, cut, sysId);
+        if (!cb || cb.length < 1500 || !isImg(cb)) return null;
+        b = cb; outExt = 'jpg';
+      } catch { return null; } finally { await fs.promises.unlink(tmpCut).catch(() => {}); }
+    }
+    fs.mkdirSync(cacheDir(), { recursive: true });
+    const p = f + '.' + outExt, tmp = p + '.tmp';
+    try { await fs.promises.writeFile(tmp, b); await fs.promises.rename(tmp, p); } catch (e) { await fs.promises.unlink(tmp).catch(() => {}); o.log('PC cover: thumbnail not saved', e.message); return null; }
+    return p;
+  });
 }
 
 // the options for one game + part: { list: [{ key, thumb, source, label, sub }], sgdb: has a SteamGridDB key, current: chosen?, part }
@@ -91,11 +109,11 @@ async function options(game, part = 'front') {
   if (o.lbCands) {
     try {
       const cands = await o.lbCands(game, p);
-      const got = await Promise.all((cands || []).slice(0, 16).map(async (c, i) => ({ c, i, t: await thumb(c.url) })));
+      const got = await Promise.all((cands || []).slice(0, 16).map(async (c, i) => ({ c, i, t: await thumb(c.url, c.cut, c.sysId) })));
       for (const { c, i, t } of got) {
         if (!t) continue;
         const k = 'lb' + i;
-        keys[k] = { url: c.url, ...(c.cut ? { cut: c.cut } : {}) };
+        keys[k] = { file: t, url: c.url, ...(c.cut ? { cut: c.cut, sysId: c.sysId } : {}) };
         list.push({ key: k, thumb: o.fileUrl(t), source: 'launchbox', label: c.label || 'LaunchBox', sub: 'LaunchBox DB' });
       }
     } catch (e) { o.log('PC art: LaunchBox', p, e.message); }
@@ -107,8 +125,28 @@ async function options(game, part = 'front') {
       spine: { label: 'Spine made by Boxshelf', sub: 'Cover colour & game logo' },
       disc: { label: 'Disc made by Boxshelf', sub: 'Cover art & game logo' }
     }[p];
-    keys.made = { made: p, game: { id, title: game.title, appid: game.appid } };
-    list.push({ key: 'made', thumb: '', source: 'made', icon: '✦', label: madeInfo.label, sub: madeInfo.sub });
+    const frontChosen = cover(id, 'front');
+    let frontStamp = '';
+    if (frontChosen) { try { frontStamp = String(Math.floor(fs.statSync(frontChosen).mtimeMs)); } catch {} }
+    const madeBase = path.join(cacheDir(), 'made-' + p + '-' + sha(`${id}|${game.title || ''}|${game.appid || ''}|${frontChosen || ''}|${frontStamp}`));
+    let madeFile = null;
+    for (const e of EXTS) if (isFile(madeBase + '.' + e)) { madeFile = madeBase + '.' + e; break; }
+    const madeGame = { id, title: game.title, appid: game.appid, term: !!game.term };
+    if (!madeFile) {
+      try {
+        const r = await o.makePart(p, madeGame);
+        if (r && r.buf && isImg(r.buf)) {
+          fs.mkdirSync(cacheDir(), { recursive: true });
+          const dest = madeBase + '.' + (r.ext || (p === 'disc' ? 'png' : 'jpg'));
+          const tmp = dest + '.tmp';
+          await fs.promises.writeFile(tmp, r.buf);
+          await fs.promises.rename(tmp, dest);
+          madeFile = dest;
+        }
+      } catch (e) { o.log('PC art: made preview', p, e.message); }
+    }
+    keys.made = madeFile ? { file: madeFile, made: p, game: madeGame } : { made: p, game: madeGame };
+    list.push({ key: 'made', thumb: madeFile ? o.fileUrl(madeFile) : '', source: 'made', icon: '✦', label: madeInfo.label, sub: madeInfo.sub });
   }
 
   last.set(id + '|' + p, keys);
@@ -122,13 +160,13 @@ async function use(id, key, part = 'front') {
   const k = (last.get(id + '|' + p) || {})[String(key || '')];
   if (!k) throw new Error('That cover isn\'t in the list any more. Open the picker again.');
   let buf = null, ext = 'jpg';
-  if (k.made) {
+  if (k.file && isFile(k.file)) {
+    buf = await fs.promises.readFile(k.file); ext = extOf(k.file, buf);
+  } else if (k.made) {
     if (!o.makePart) throw new Error('Art generation isn\'t available.');
     const r = await o.makePart(k.made, k.game);
     if (!r || !r.buf) throw new Error('Could not generate art (choose a front cover first).');
     buf = r.buf; ext = r.ext || 'jpg';
-  } else if (k.file) {
-    buf = await fs.promises.readFile(k.file); ext = extOf(k.file, buf);
   } else if (k.url || k.urls) {
     const us = k.urls || [k.url]; let u = null;
     for (const x of us) { buf = await o.fetchImage(x); if (buf && isImg(buf)) { u = x; break; } buf = null; }
@@ -139,7 +177,7 @@ async function use(id, key, part = 'front') {
       const tmp = path.join(cacheDir(), '.cut-' + process.pid + '-' + sha(u) + '.' + ext);
       try {
         await fs.promises.writeFile(tmp, buf);
-        const cut = await o.cutSpine(tmp, k.cut);
+        const cut = await o.cutSpine(tmp, k.cut, k.sysId);
         if (cut && cut.length > 1500) { buf = cut; ext = 'jpg'; }
       } finally { await fs.promises.unlink(tmp).catch(() => {}); }
     }
@@ -256,4 +294,4 @@ async function downloadBestFront(game, rankFn, onBeforeSave) {
   return saveFirstFrontCand(id, rest, onBeforeSave);
 }
 
-module.exports = { init, cover, art, options, use, own, downloadBestFront, reset: (id, part = 'front') => clear(String(id), part), PARTS, SUFFIX };
+module.exports = { init, cover, art, thumb, options, use, own, downloadBestFront, reset: (id, part = 'front') => clear(String(id), part), PARTS, SUFFIX };
