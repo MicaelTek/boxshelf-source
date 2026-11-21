@@ -566,11 +566,12 @@ const REGION_WORD = { usa: 'USA', eur: 'Europe', jpn: 'Japan', world: 'World', '
 const titleCase = s => s.replace(/\b[a-z]/g, c => c.toUpperCase()).replace(/'S\b/g, "'s");
 const label = (...bits) => bits.filter(Boolean).join(' · ');
 const extOf = f => /^\.(png|jpe?g|webp)$/i.test(path.extname(f)) ? path.extname(f).toLowerCase() : '.jpg';
-function lbCand(im) {
+function lbCand(im, part) {
   const fan = /^Fanart|^Steam Poster/.test(im.type), recon = /Reconstructed/.test(im.type), region = lbRegion(im.region), ed = edition(im.edition || '');
-  const what = im.type === 'Box - Full' ? 'Cut from full box' : fan ? 'Fan art' : recon ? 'Clean rebuild' : /^(Cart|Fanart - Cart)/.test(im.type) ? 'Cartridge' : 'Box scan';
-  return { url: LB_IMG + encodeURI(im.file), ext: im.type === 'Box - Full' ? '.jpg' : extOf(im.file), source: 'launchbox', type: im.type, region, regionName: im.region || '', edition: ed.edition,
-    kind: recon || fan ? 'clean' : 'scan', fan, cut: im.type === 'Box - Full' ? 'spine' : null, src: im.type === 'Box - Full' ? extOf(im.file) : null, label: label(ed.name ? titleCase(ed.name) : what, REGION_WORD[region] || im.region || '') };
+  const isFull = im.type === 'Box - Full', cutPart = isFull ? (part === 'back' ? 'back' : 'spine') : null;
+  const what = isFull ? 'Cut from full box' : fan ? 'Fan art' : recon ? 'Clean rebuild' : /^(Cart|Fanart - Cart)/.test(im.type) ? 'Cartridge' : 'Box scan';
+  return { url: LB_IMG + encodeURI(im.file), ext: isFull ? '.jpg' : extOf(im.file), source: 'launchbox', type: im.type, region, regionName: im.region || '', edition: ed.edition,
+    kind: recon || fan ? 'clean' : 'scan', fan, cut: cutPart, src: isFull ? extOf(im.file) : null, label: label(ed.name ? titleCase(ed.name) : what, REGION_WORD[region] || im.region || '') };
 }
 function lrCand(sysId, name, game) {
   const ed = edition(tagsOf(name)), region = lrRegion(name), base = game ? artBase(game.file) : '';
@@ -597,8 +598,8 @@ async function candidates(sysId, game, part, opts = {}) {
     let g0 = null; try { g0 = launchboxMatch(idx, sysId, game); } catch {}
     if (!g0 && /\s(\+|&|and)\s/i.test(game.title)) { try { g0 = launchboxMatch(idx, sysId, { title: game.title.split(/\s(?:\+|&|and)\s/i)[0] }); } catch {} }
     const imgs = g0 ? (idx.images[g0.id] || []) : [];
-    const types = { front: ['Box - Front', ...LB_FALLBACK['Box - Front']], back: ['Box - Back', ...LB_FALLBACK['Box - Back']], spine: ['Box - Spine', ...(spineCutter ? ['Box - Full'] : [])], disc: ['Disc', ...LB_FALLBACK.Disc] }[part] || [];
-    for (const t of types) for (const im of imgs) if (im.type === t && im.file) out.push(lbCand(im));
+    const types = { front: ['Box - Front', ...LB_FALLBACK['Box - Front']], back: ['Box - Back', ...LB_FALLBACK['Box - Back'], ...(spineCutter ? ['Box - Full'] : [])], spine: ['Box - Spine', ...(spineCutter ? ['Box - Full'] : [])], disc: ['Disc', ...LB_FALLBACK.Disc] }[part] || [];
+    for (const t of types) for (const im of imgs) if (im.type === t && im.file) out.push(lbCand(im, part));
   }
   if (part === 'front' && LIBRETRO[sysId] && opts.libretro !== false) {
     let names = null; const wait = opts.lrWait || 8000; let t;

@@ -428,7 +428,18 @@ body.reduce-motion .theme-fx i{animation:none!important}
 .bp-foot{margin-top:10px;padding:0 8px;font-size:11px;color:var(--ink-dim)}
 /* (beta.5) a PC game's cover picker: the build picker's card, wider, with a grid of covers (2:3) and two action tiles */
 .coverpick .bp-card{width:min(980px,94vw)}
-.cp-tabs{display:flex;gap:6px;padding:0 8px 6px}
+.cp-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:0 8px 6px}
+.cp-tabs{display:flex;gap:6px}
+.cp-search{display:flex;align-items:center;gap:6px;margin-left:auto;min-width:0}
+.cp-search[hidden]{display:none}
+.cp-input{width:min(240px,42vw);padding:6px 12px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.06);color:var(--ink);font:inherit;font-size:12px;outline:none;transition:border-color .15s,background .15s}
+.cp-input::placeholder{color:var(--ink-dim)}
+.cp-input:focus{border-color:rgba(169,191,255,.65);background:rgba(255,255,255,.1)}
+.cp-clear{width:26px;height:26px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:50%;background:rgba(255,255,255,.05);color:var(--ink-dim);font:inherit;font-size:11px;cursor:pointer;display:grid;place-items:center}
+.cp-clear[hidden]{display:none}
+.cp-clear:hover{color:var(--ink);background:rgba(255,255,255,.14)}
+.cp-sbtn{padding:6px 14px;border:1px solid rgba(169,191,255,.35);border-radius:999px;background:rgba(107,140,255,.18);color:#e7ecff;font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+.cp-sbtn:hover{background:rgba(107,140,255,.32);border-color:rgba(169,191,255,.6)}
 .cp-tab{padding:6px 14px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.04);color:var(--ink-dim);font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
 .cp-tab:hover{color:var(--ink);background:rgba(255,255,255,.1)}
 .cp-tab.on{background:rgba(255,255,255,.92);color:#10121a;border-color:transparent}

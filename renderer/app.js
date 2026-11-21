@@ -1841,7 +1841,7 @@ function bpDone(exe){if(!bp)return;const b=bp;bp=null;mode=b.prev;b.el.classList
    D-pad move through the grid, A uses, B (Esc) closes; a click or tap uses a tile. The main side keeps the addresses:
    the page sends a game id and an option's key only */
 let cp=null,cpReturn=null;
-const CP_PARTS=[["front","Front"],["back","Back"],["spine","Spine"],["disc","Disc"]];
+const CP_PARTS=[["front","Front"],["back","Back cover"],["spine","Spine"],["disc","Disc"]];
 async function pcCoverOpen(g,term,batch,part="front"){if(kidBlock())return;
   if(!api.pcCoverOptions||cp||bp||(mode!=="browse"&&mode!=="details"))return;
   if(batch||!CP_PARTS.some(x=>x[0]===part))part="front";
@@ -1849,14 +1849,26 @@ async function pcCoverOpen(g,term,batch,part="front"){if(kidBlock())return;
   const card=document.createElement("div");card.className="bp-card";card.setAttribute("role","dialog");card.setAttribute("aria-label","Choose box art");
   const t=document.createElement("div");t.className="bp-title";t.textContent=batch?`Choose a cover · ${batch.i+1} of ${batch.list.length}`:"Box art";
   const sub=document.createElement("div");sub.className="bp-game";sub.textContent=g.title;
+  const bar=document.createElement("div");bar.className="cp-bar";
   const tabs=document.createElement("div");tabs.className="cp-tabs";tabs.hidden=!!batch;
   const tabBtns=new Map();
   CP_PARTS.forEach(([pk,pl])=>{const tb=document.createElement("button");tb.type="button";tb.className="cp-tab";tb.textContent=pl;tb.addEventListener("click",()=>cpSetPart(pk));tabs.append(tb);tabBtns.set(pk,tb)});
+  const searchWrap=document.createElement("div");searchWrap.className="cp-search";searchWrap.hidden=!!batch;
+  const searchIn=document.createElement("input");searchIn.type="text";searchIn.className="cp-input";searchIn.placeholder="Search by name…";searchIn.setAttribute("aria-label","Search by name");searchIn.value=term||"";
+  const clearBtn=document.createElement("button");clearBtn.type="button";clearBtn.className="cp-clear";clearBtn.textContent="✕";clearBtn.title="Clear search";clearBtn.hidden=!String(term||"").trim();
+  const searchBtn=document.createElement("button");searchBtn.type="button";searchBtn.className="cp-sbtn";searchBtn.textContent="Search";
+  searchWrap.append(searchIn,clearBtn,searchBtn);
+  bar.append(tabs,searchWrap);
   const note=document.createElement("div");note.className="cp-note";note.textContent="Looking for art…";
   const grid=document.createElement("div");grid.className="cp-grid part-"+part;
   const f=document.createElement("div");f.className="bp-foot";f.textContent=batch?`${btnWord("a")} use · ${btnWord("back")} stop`:`${btnWord("a")} use · ${showPad()?`${padWord("L1")} / ${padWord("R1")}`:"Q / E"} part · ${btnWord("back")} back`;
-  card.append(t,sub,tabs,note,grid,f);el.append(card);el.addEventListener("click",e=>{if(e.target===el){cpDone();sfx.back()}});document.body.append(el);
-  cp={el,grid,note,tabBtns,g,term:term||"",part,items:[],tiles:[],i:0,prev:mode==="details"?"browse":mode,busy:false,batch:batch||null,advance:false};if(mode==="details")closeDetails(true);mode="cover";
+  card.append(t,sub,bar,note,grid,f);el.append(card);el.addEventListener("click",e=>{if(e.target===el){cpDone();sfx.back()}});document.body.append(el);
+  cp={el,grid,note,tabBtns,input:searchIn,clearBtn,g,term:term||"",part,items:[],tiles:[],i:0,prev:mode==="details"?"browse":mode,busy:false,batch:batch||null,advance:false};if(mode==="details")closeDetails(true);mode="cover";
+  const runSearch=v=>{if(!cp||cp.busy)return;const q=String(v!=null?v:searchIn.value).replace(/\s+/g," ").trim().slice(0,120);cp.term=q;searchIn.value=q;clearBtn.hidden=!q;cpLoad(cp.part)};
+  searchIn.addEventListener("input",()=>{clearBtn.hidden=!searchIn.value.trim()});
+  searchIn.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();e.stopPropagation();runSearch();searchIn.blur()}else if(e.key==="Escape"){e.preventDefault();e.stopPropagation();searchIn.blur()}else{e.stopPropagation()}});
+  searchBtn.addEventListener("click",()=>runSearch());
+  clearBtn.addEventListener("click",()=>{runSearch("");searchIn.focus()});
   requestAnimationFrame(()=>el.classList.add("on"));sfx.flip();
   await cpLoad(part);
 }
@@ -1867,9 +1879,9 @@ async function cpLoad(part){
   c.tabBtns.forEach((b,k)=>b.classList.toggle("on",k===part));
   c.grid.className="cp-grid part-"+part;c.grid.innerHTML="";c.items=[];c.tiles=[];c.i=0;
   c.note.textContent=part==="front"?"Looking for covers…":`Looking for ${part} art…`;
-  let r=null;try{r=await api.pcCoverOptions(g.id,term||"",part)}catch(e){if(cp===c&&cp.part===part)cp.note.textContent=String(e&&e.message||e);r={list:[],sgdb:true,current:false}}
-  if(cp!==c||cp.part!==part)return;
-  const items=[...(batch?[{act:"skip",icon:"→",label:"Skip this game",sub:batch.i+1<batch.list.length?"On to the next":"The last one"}]:[]),...(!batch?[{act:"search",icon:"⌕",label:"Search by name…",sub:term?`Now: ${term}`:"Another name to look up"}]:[]),{act:"own",icon:"+",label:"A picture of yours",sub:"JPG, PNG or WebP"},...(r.current?[{act:"reset",icon:"↺",label:part==="front"?"Automatic cover":"Clear this part",sub:part==="front"?"Go back to it":"Remove custom art"}]:[]),
+  let r=null;try{r=await api.pcCoverOptions(g.id,term||"",part)}catch(e){if(cp===c&&cp.part===part&&cp.term===term)cp.note.textContent=String(e&&e.message||e);r={list:[],sgdb:true,current:false}}
+  if(cp!==c||cp.part!==part||cp.term!==term)return;
+  const items=[...(batch?[{act:"skip",icon:"→",label:"Skip this game",sub:batch.i+1<batch.list.length?"On to the next":"The last one"}]:[]),{act:"own",icon:"+",label:"A picture of yours",sub:"JPG, PNG or WebP"},...(r.current?[{act:"reset",icon:"↺",label:part==="front"?"Automatic cover":"Clear this part",sub:part==="front"?"Go back to it":"Remove custom art"}]:[]),
     ...(r.list||[]).map(x=>({key:x.key,thumb:x.thumb,icon:x.icon||"",label:x.label,sub:x.sub||""})),
     ...(!r.sgdb&&!batch&&(part==="front"||part==="disc")&&window.Setup&&Setup.open?[{act:"sgdb",icon:"",acct:true,label:"Add SteamGridDB",sub:part==="disc"?"Disc icons · free key":"Dozens more covers · free key"}]:[])];
   const L=r.list||[],n=L.filter(x=>x.source==="steamgriddb").length,ns=L.filter(x=>x.source==="steamstore"||x.source==="steam").length,nlb=L.filter(x=>x.source==="launchbox").length;
@@ -1897,8 +1909,8 @@ async function cpChoose(){if(!cp||cp.busy)return;const it=cp.items[cp.i],g=cp.g,
   try{
     if(it.act==="skip"){next();cpDone();play_("tick",{dir:1});return}
     if(it.act==="own"){const r=await api.pcCoverOwn(g.id,part);if(r&&r.ok){if(B)B.done++;next();cpDone();play_("toast");if(!B)toast(`New ${part} art for ${g.title}`)}else if(cp)cp.busy=false;return}
-    if(it.act==="search"){cpDone();play_("panel");Setup.open({page:"coversearch",id:g.id,title:g.title,term:term||""});return}
-    if(it.act==="sgdb"){cpDone();play_("panel");cpReturn={id:g.id,term:term||""};Setup.open({page:"steamgriddb"});return} // (beta.9) the key's page; the picker again when Settings closes
+    if(it.act==="search"){if(cp&&cp.input){cp.input.focus();cp.input.select()}return}
+    if(it.act==="sgdb"){cpDone();play_("panel");cpReturn={id:g.id,term:term||"",part};Setup.open({page:"steamgriddb"});return} // (beta.9) the key's page; the picker again when Settings closes
     if(it.act==="reset"){await api.pcCoverReset(g.id,part);next();cpDone();play_("toast");if(!B)toast(part==="front"?`${g.title} is back on its automatic cover`:`Removed ${part} art for ${g.title}`);return}
     if(it.key==="current"){next();cpDone();return}
     cp.note.textContent=it.key==="made"?"Generating art…":"Downloading art…";await api.pcCoverUse(g.id,it.key,part);if(B)B.done++;next();cpDone();play_("toast");if(!B)toast(`New ${part} art for ${g.title}`);
@@ -1925,7 +1937,7 @@ async function pcCoverAuto(){if(!api.pcCoverMissing||cp||bp)return {n:0};const L
 async function pcCoverUndo(){const L=coverUndo;coverUndo=[];for(const id of L){try{await api.pcCoverReset(id)}catch{}}if(L.length){play_("toast");toast(`${L.length} cover${L.length===1?"":"s"} put back`)}return L.length}
 function cpDone(){if(!cp)return;const c=cp;cp=null;mode=c.prev;c.el.classList.remove("on");setTimeout(()=>c.el.remove(),260)
   if(c.batch){const b=c.batch;if(c.advance){b.i++;setTimeout(()=>cpBatchOpen(b),320)}else if(b.done)toast(`New covers for ${b.done} game${b.done===1?"":"s"}`)}} // (beta.9: B stops a batch)
-function cpKey(k){if(k==="ArrowLeft")cpMove(-1,0);else if(k==="ArrowRight")cpMove(1,0);else if(k==="ArrowUp")cpMove(0,-1);else if(k==="ArrowDown")cpMove(0,1);
+function cpKey(k){if(cp&&cp.input&&document.activeElement===cp.input)return false;if(k==="ArrowLeft")cpMove(-1,0);else if(k==="ArrowRight")cpMove(1,0);else if(k==="ArrowUp")cpMove(0,-1);else if(k==="ArrowDown")cpMove(0,1);
   else if(k==="q"||k==="Q")cpStepPart(-1);else if(k==="e"||k==="E")cpStepPart(1);
   else if(k==="Enter"||k===" ")cpChoose();else if(k==="Escape"||k==="Backspace"){cpDone();sfx.back()}else return false;return true}
 function bpKey(k){if(k==="ArrowUp")bpMove(-1);else if(k==="ArrowDown")bpMove(1);else if(k==="Enter"||k===" ")bpChoose();else if(k==="Escape"||k==="Backspace")bpDone(null);else return false;return true}
@@ -5585,7 +5597,7 @@ window.Shelf={
   _mus:{set:(k,v)=>musSetOpt(k,v),style:()=>musStyle(),hist:h=>{HIST=Object.assign({},HIST,h||{})},tv:()=>({ch:tvS.ch,n:tvS.list.length,list:tvS.list.slice(0,4).map(e=>String(e.key).slice(0,12)),i:tvS.i,ads:tvS.ads.length,bad:[...tvS.bad],guide:!!tvS.guide}),games:()=>allShelves.filter(sh=>sh.kind==="console").flatMap(sh=>ownItems(sh).filter(isGame).map(g=>({id:g.id,title:g.title,sys:sh.id})))}, // museum test hooks (the harness can't see these names)
   refresh,flushSaves,toast,shuffle,cleanLogo,attractNow:()=>{lastInputAt=-1e9;attractCheck()},sound:(o)=>{if(o&&o.enabled!=null){soundOn=!!o.enabled;musTvVol()}if(o&&o.volume!=null&&cfgInfo){cfgInfo.config.ui.volume=+o.volume;paintVol()}if(window.Sound){Sound.set(o);if(o.preview)Sound.play(o.preview);if(o.music!=null||o.musicLevel!=null){if(o.music!=null)mmTrack=String(o.music);if(o.musicLevel!=null)mmLevel=+o.musicLevel;ambient(mmWant)}else if(o.enabled===true)ambient(mmWant)}},raReload:()=>{RA.shelf={};RA.game.clear();raInit()},
   // Settings closed without a rescan: pick up what refresh() used to re-read (sound on/off, the volume icon, prompts)
-  settingsClosed:()=>{if(cpReturn){const x=cpReturn;cpReturn=null;const g=allShelves.flatMap(s=>s.items||[]).find(y=>y&&y.id===x.id);if(g)setTimeout(()=>pcCoverOpen(g,x.term),350)} /* (beta.9) back from the SteamGridDB key's page: the cover picker again */
+  settingsClosed:()=>{if(cpReturn){const x=cpReturn;cpReturn=null;const g=allShelves.flatMap(s=>s.items||[]).find(y=>y&&y.id===x.id);if(g)setTimeout(()=>pcCoverOpen(g,x.term,null,x.part||"front"),350)} /* (beta.9) back from the SteamGridDB key's page: the cover picker again */
     if(!cfgInfo)return;const u=cfgInfo.config.ui;soundOn=u.sound!==false;paintVol();buttonsPref=u.buttons||"auto";applyUiAll();renderHints.sig="";renderHints();updateSkipText();lastInputAt=performance.now();
     BIOS_ST.clear(); /* (beta.14) a BIOS file added, or an emulator changed, in Settings: looked at again */
     if(reshelfWanted&&lastLib){reshelfWanted=false;pendingLib=null;refresh(true,lastLib)}}, // (beta.11) Surprise me / Emulator case changed: the shelves without the case at once (it lingered a few seconds)
