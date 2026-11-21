@@ -194,7 +194,7 @@ function plan(lib, found) {
 // store's installer). Hidden games and anything Playnite says is installed are left out.
 const PN_STORE = { 'cb91dfc9-b977-43bf-8e70-55f46e410fab': 'steam', '00000002-dbd1-46c6-b5d0-b1ba559d10e4': 'epic', 'aebe8b7c-6dc3-4a66-af31-e7375c6b5e9e': 'gog',
   '85dd7072-2f20-4e76-a007-41035e390724': 'ea', 'c2f038e5-8b92-4877-91f1-da9094155fc5': 'ubisoft', '7e4fbb5e-2ae3-48d4-8ba0-6b30e7a4e287': 'xbox',
-  'e3c26a3d-d695-4cb7-a769-5ff7612c7edd': 'battlenet' }; // (a store not listed is 'other': it installs through Playnite all the same)
+  'e3c26a3d-d695-4cb7-a769-5ff7612c7edd': 'battlenet', '402674cd-4af6-4886-b6ec-0e695bfa0688': 'amazon', '88409022-088a-4de8-805a-fdbac291f00a': 'rockstar' }; // (a store not listed is 'other': it installs through Playnite all the same)
 function cleanDesc(s) {
   if (!s || typeof s !== 'string') return '';
   return s
