@@ -156,4 +156,104 @@ async function own(id, file, part = 'front') {
   return save(String(id), await fs.promises.readFile(file), ext, part);
 }
 
-module.exports = { init, cover, art, options, use, own, reset: (id, part = 'front') => clear(String(id), part), PARTS, SUFFIX };
+// Try downloading/reading one candidate from `cands` (buffer verified as an image) and save it as front art.
+async function saveFirstFrontCand(id, list, onBeforeSave) {
+  for (const cand of list.slice(0, 4)) {
+    let buf = null, usedUrl = cand.file || '';
+    try {
+      if (cand.file) {
+        const raw = await fs.promises.readFile(cand.file);
+        if (raw && isImg(raw)) buf = raw;
+      } else {
+        const urls = cand.urls || (cand.url ? [cand.url] : []);
+        for (const u of urls) {
+          const raw = await o.fetchImage(u);
+          if (raw && isImg(raw)) { buf = raw; usedUrl = u; break; }
+        }
+      }
+    } catch {}
+    if (!buf) continue;
+    if (typeof onBeforeSave === 'function') await onBeforeSave();
+    const dest = await save(id, buf, extOf(usedUrl, buf), 'front');
+    o.log('PC art chosen (fast):', id, 'front', cand.source);
+    return { dest, source: cand.source, key: cand.key };
+  }
+  return null;
+}
+
+// Fast zero-thumbnail front cover downloader for bulk operations: fetches metadata only, ranks candidates,
+// downloads high-confidence sources first, and skips IGDB/LaunchBox unless needed.
+async function downloadBestFront(game, rankFn, onBeforeSave) {
+  const id = String((game && game.id) || '');
+  if (!id) return null;
+  const cands = [];
+  const sgdb = !!(o.steamgrid && o.steamgrid.enabled && o.steamgrid.enabled());
+
+  if (game.appid && o.steamCover) {
+    const s = o.steamCover(game.appid);
+    if (s) cands.push({ key: 'steam', source: 'steam', label: "Steam's cover", sub: 'From your Steam library', file: s });
+  }
+  const hasLocalSteam = cands.some(c => c.key === 'steam');
+
+  const [storeCands, sgdbCands] = await Promise.all([
+    (async () => {
+      if (hasLocalSteam) return [];
+      try {
+        const apps = game.appid ? [{ id: String(game.appid), name: '' }] : (o.steamSearch ? await o.steamSearch(game.title, true) : []);
+        return (apps || []).map((a, i) => ({
+          key: 'st' + i, source: 'steamstore', label: "Steam's cover",
+          sub: a.name ? `${a.name} on Steam` : "From Steam's store",
+          urls: [...steamArt(a.id, 'library_600x900_2x.jpg'), ...steamArt(a.id, 'library_600x900.jpg')]
+        }));
+      } catch (e) { o.log('PC cover (fast): Steam store', e.message); return []; }
+    })(),
+    (async () => {
+      if (!sgdb) return [];
+      try {
+        const posters = await o.steamgrid.posters(game.appid ? { appid: game.appid, title: game.title } : { title: game.title, names: [game.title] }, o.match);
+        return (posters || []).slice(0, 12).map((x, i) => ({
+          key: 'sg' + i, source: 'steamgriddb',
+          label: x.styleName ? `SteamGridDB · ${x.styleName}` : 'SteamGridDB',
+          sub: x.author ? 'by ' + x.author : '',
+          url: x.url
+        }));
+      } catch (e) { o.log('PC cover (fast): SteamGridDB', e.message); return []; }
+    })()
+  ]);
+  cands.push(...storeCands, ...sgdbCands);
+
+  const rank = list => typeof rankFn === 'function' ? (rankFn(list) || []) : list.slice();
+  const primaryRanked = rank(cands);
+  const topHigh = primaryRanked.filter(c => typeof c._score !== 'number' || c._score >= 85);
+  if (topHigh.length) {
+    const saved = await saveFirstFrontCand(id, topHigh, onBeforeSave);
+    if (saved) return saved;
+  }
+
+  const tried = new Set(topHigh.slice(0, 4).map(c => c.key));
+  const [igCand, lbList] = await Promise.all([
+    (async () => {
+      if (!o.igdbCover) return null;
+      try {
+        const u = await o.igdbCover(game);
+        return u ? { key: 'ig0', source: 'igdb', label: 'IGDB', sub: 'Game database cover', url: u } : null;
+      } catch (e) { o.log('PC cover (fast): IGDB', e.message); return null; }
+    })(),
+    (async () => {
+      if (!o.lbCands) return [];
+      try {
+        const list = await o.lbCands(game, 'front');
+        return (list || []).slice(0, 8).map((c, i) => ({
+          key: 'lb' + i, source: 'launchbox', label: c.label || 'LaunchBox', sub: 'LaunchBox DB', url: c.url
+        }));
+      } catch (e) { o.log('PC cover (fast): LaunchBox', e.message); return []; }
+    })()
+  ]);
+  if (igCand) cands.push(igCand);
+  if (lbList && lbList.length) cands.push(...lbList);
+
+  const rest = rank(cands.filter(c => !tried.has(c.key)));
+  return saveFirstFrontCand(id, rest, onBeforeSave);
+}
+
+module.exports = { init, cover, art, options, use, own, downloadBestFront, reset: (id, part = 'front') => clear(String(id), part), PARTS, SUFFIX };
