@@ -773,7 +773,8 @@ async function buildLibrary() {
   const owned = [];
   if (pc.owned === true) try {
     const have = new Set([...pcShelf, ...epic, ...mine].map(x => normT(x.title))), haveApp = new Set(pcShelf.map(x => String(x.appid || '')));
-    for (const g of ownedNow().games) if (!have.has(normT(g.title)) && !(g.appid && haveApp.has(g.appid))) {
+    const storeOn = st => st === 'steam' ? (!cfg.steam || cfg.steam.enabled !== false) : (!st || st === 'other' || pc[st] !== false);
+    for (const g of ownedNow().games) if (storeOn(g.store) && !have.has(normT(g.title)) && !(g.appid && haveApp.has(g.appid))) {
       owned.push({
         id: 'own-' + g.key, source: 'owned', title: g.title, uri: g.uri, store: g.store, appid: g.appid,
         ...(g.info ? { info: g.info } : {}),
