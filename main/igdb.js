@@ -15,7 +15,7 @@ const GAP = 300, MEMO = 30 * 60e3, MEMO_N = 200, RETRY = 30 * 864e5;
 const PLAT = { gc: 21, wii: 5, wiiu: 41, sw: 130, psx: 7, ps2: 8, ps3: 9, ps4: 48, psp: 38, psvita: 46, n64: 4, snes: 19, nes: 18, gba: 24, gb: 33, gbc: 22, nds: 20, n3ds: 37,
   megadrive: 29, saturn: 32, dreamcast: 23, mastersystem: 64, gamegear: 35, pcengine: 86, x360: 12, xbox: 11, segacd: 78, sega32x: 30, atari2600: 59, atarilynx: 61, wonderswan: 57, neogeo: 80, dos: 13, pc: 6 };
 const FIELDS = 'name,summary,cover.image_id,first_release_date,total_rating,genres.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher,franchise.name,franchises.name,screenshots.image_id';
-const titleOf = g => String((g && g.title) || '').replace(/\s*[([].*?[)\]]/g, '').replace(/["\\]/g, '').trim();
+const titleOf = g => String((g && g.title) || '').replace(/\s*[([].*?[)\]]/g, '').replace(/\s+[-–—]+\s+/g, ' ').replace(/["\\]/g, '').trim();
 
 // ---------- the client: the token, the queue, one lookup per game ----------
 // (the queue is the module's: every client made here, the screenshots', the info's and the trailers', shares IGDB's limit)
@@ -66,12 +66,16 @@ function client(o) {
   // keys or a title. Throws when busy or the keys are turned down (asked again next time).
   function lookup(sysId, game) {
     const t = titleOf(game); if (!t || !ready()) return Promise.resolve(null);
-    const now = Date.now(), mk = sysId + '|' + t.toLowerCase();
+    const now = Date.now(), mk = sysId + '|' + String((game && game.title) || t).toLowerCase();
     for (const [k, v] of memo) if (now - v.at >= MEMO) memo.delete(k);
     const m = memo.get(mk); if (m) return m.p;
-    const p = PLAT[sysId], q = `search "${t}"; fields ${FIELDS}; ${p ? `where platforms = (${p}); ` : ''}limit 15;`;
-    const pr = query('games', q).then(L => {
-      if (!L) return null; const named = L.filter(x => x && typeof x.name === 'string' && x.name);
+    const p = PLAT[sysId];
+    const tNoYear = t.replace(/\b(?:19[7-9]\d|20[0-3]\d)\b/g, ' ').replace(/\s+/g, ' ').trim();
+    const ask = s => query('games', `search "${s}"; fields ${FIELDS}; ${p ? `where platforms = (${p}); ` : ''}limit 25;`);
+    const pr = ask(t).then(async L => {
+      let arr = Array.isArray(L) ? L : [];
+      if (!arr.length && tNoYear && tNoYear !== t) arr = await ask(tNoYear).catch(() => []);
+      if (!arr.length) return null; const named = arr.filter(x => x && typeof x.name === 'string' && x.name);
       const pick = list => { if (!list.length) return null; try { return o.match(list, game) || null; } catch { return null; } };
       return { hit: pick(named), shotHit: pick(named.filter(x => Array.isArray(x.screenshots) && x.screenshots.length)) };
     });
@@ -79,11 +83,19 @@ function client(o) {
     pr.then(v => { if (!v) memo.delete(mk); }, () => memo.delete(mk));
     return pr;
   }
-  function search(title, sysId = '') {
-    const t = titleOf({ title }); if (!t || !ready()) return Promise.resolve([]);
+  async function search(title, sysId = '') {
+    const yrM = /(?:[([\s]|^)(19[7-9]\d|20[0-3]\d)(?:[\])]|$)/.exec(String(title || '').trim());
+    const wantYear = yrM ? +yrM[1] : 0;
+    const t = titleOf({ title }); if (!t || !ready()) return [];
+    const tNoYear = wantYear ? t.replace(new RegExp('\\b' + wantYear + '\\b', 'g'), ' ').replace(/\s+/g, ' ').trim() : '';
     const p = PLAT[sysId];
-    const q = `search "${t}"; fields ${FIELDS},platforms.name; ${p ? `where platforms = (${p}); ` : ''}limit 12;`;
-    return query('games', q).then(L => (Array.isArray(L) ? L : []).filter(h => h && typeof h.name === 'string' && h.name).map(h => {
+    const ask = s => query('games', `search "${s}"; fields ${FIELDS},platforms.name; ${p ? `where platforms = (${p}); ` : ''}limit 25;`);
+    const seen = new Map();
+    for (const h of (await ask(t)) || []) if (h && h.id && typeof h.name === 'string' && h.name && !seen.has(h.id)) seen.set(h.id, h);
+    if (tNoYear && tNoYear !== t) {
+      for (const h of (await ask(tNoYear)) || []) if (h && h.id && typeof h.name === 'string' && h.name && !seen.has(h.id)) seen.set(h.id, h);
+    }
+    const items = [...seen.values()].map(h => {
       const i = infoOf(h) || {};
       return {
         id: h.id,
@@ -94,7 +106,12 @@ function client(o) {
         shots: shotsOf(h).slice(0, 8),
         cover: coverOf(h) || null
       };
-    }));
+    });
+    if (wantYear) {
+      const yrScore = x => { const y = +x.year || 0; return y === wantYear ? 3 : (y && Math.abs(y - wantYear) <= 1) ? 2 : (new RegExp('\\b' + wantYear + '\\b').test(x.name) ? 2 : 0); };
+      items.sort((a, b) => yrScore(b) - yrScore(a));
+    }
+    return items;
   }
   return { ready, lookup, search, query, refused };
 }
