@@ -199,7 +199,9 @@ function build(){
     // games owned but not installed, from Playnite's store libraries (main.js ownedRefresh; Play installs them)
     T("Show games you haven't installed","pc.owned",false,"Puts every game you own but haven't installed on the PC shelf, faded with a download mark, from the store libraries you connected in Playnite (Steam, Epic, GOG, EA, Ubisoft, Xbox and more). Play installs it: Steam's own install for Steam games, Playnite for the rest. Needs Playnite installed with its libraries connected.",{rescan:true,keys:"not installed owned library playnite install uninstalled all games biblioteca nao instalados"}),
     // every PC game in one list: on the shelf, a favourite, or hidden, each a step left / right away (pcEditRows)
-    M("Edit the PC shelf","pc-edit","Every PC game in one list: mark favourites or hide games quickly. Type to find one.","Each game: on the shelf, ♥ favourite or hidden. Left / right changes it at once.",[],{when:()=>!!(window.Shelf&&Shelf.pcEditList),extra:pcEditRows,keys:"edit pc games list favourite favorite hide hidden organize bulk manage editar organizar",sub:()=>{const L=pcEdit();if(!L.length)return null;const f=L.filter(x=>x.fav).length,h=L.filter(x=>x.hidden).length;return {text:`${L.length} games · ${f} ♥ · ${h} hidden`}}}),
+    M("Edit the PC shelf","pc-edit","Organize PC games into Steam-style collapsible categories, dynamic filters (Horror, Online…) or mark favorites and hide games quickly.",
+      "Collapsible categories (+ to expand), dynamic rules (⚡), or left / right on a game for shelf / ♥ / hidden.",[],
+      {when:()=>!!(window.Shelf&&Shelf.pcEditList),extra:pcEditRows,keys:"edit pc games list favourite favorite hide hidden organize bulk manage categories collections filter horror steam playnite editar organizar categorias",sub:()=>{const L=pcEdit();if(!L.length)return null;const f=L.filter(x=>x.fav).length,gn=((cfg&&cfg.pc&&cfg.pc.groups)||[]).length;return {text:`${L.length} games · ${f} ♥`+(gn?` · ${gn} ${gn===1?"category":"categories"}`:"")}}}),
     // (beta.12) where people look first for Playnite and decomps: the way to the page that has them
     A("Other PC games","Open","Games from Playnite or Quiver Launcher, decomps and recomps (Ship of Harkinian, Zelda 64 Recompiled…), PC ports and any other program go on the Custom shelf. This opens Custom games, where every way to bring them in is.",
       ()=>{if(typeof MORE!=="undefined"&&MORE&&MORE["lib-custom"]){route("custom");return}goSecId("custom");focus="page";rowI=0;play("open");render()},{ns:true,when:()=>SECTIONS.some(s=>s.id==="custom")||(typeof MORE!=="undefined"&&!!MORE&&!!MORE["lib-custom"]), /* (beta.14: Settings in tabs, Custom games is Library's page lib-custom: route opens it) */keys:"playnite decomp decomps recomp recomps port ports other launcher custom quiver",sub:()=>({text:"Playnite, decomps, ports → Custom games"})}),
@@ -779,20 +781,244 @@ async function emuAct(sys){const e=emuOf(sys);if(!e||e.state==="unsupported"||e.
 // Settings → Library → PC games → Edit the PC shelf: one row per PC game, its state a choice (on the shelf / ♥ favourite /
 // hidden) applied at once through the shelf (Shelf.setFav / setHidden) and mirrored in this screen's copy of the config,
 // so the next save here doesn't put the old lists back
-let pcEditCache=null;
+let pcEditCache=null,pcEdQ="",pcCatCur=null,pcAssignGid=null;
+const pcEdOpenVirtual={__favorites:false,__uncategorized:false};
+const pcCatRowsCache=new Map();
 function pcEdit(){if(!pcEditCache&&window.Shelf&&Shelf.pcEditList)try{pcEditCache=Shelf.pcEditList()||[]}catch{pcEditCache=[]}return pcEditCache||[]}
-const PC_SRC={steam:"Steam",epic:"Epic Games",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox",owned:"Not installed",quiver:"Quiver",custom:"Custom"};
-function pcEditRows(){const L=pcEdit();
-  if(!L.length)return [{t:"action",label:"No PC games yet",btn:"—",info:"Games from Steam, Epic and the other stores show up here once they're on the PC shelf.",run:()=>{},ns:true,dim:true}];
-  return L.map(g=>({t:"choice",label:g.title,opts:[["show","On the shelf"],["fav","♥ Favorite"],["hide","Hidden"]],d:"show",nosave:true,ns:true,keys:"pc edit "+g.title,
-    sub:()=>({text:PC_SRC[g.source]||""}),info:"Left / right: on the shelf, a favourite (♥, also on the Home shelf), or hidden from every shelf. It changes at once.",
+const PC_SRC={steam:"Steam",epic:"Epic Games",gog:"GOG",ubisoft:"Ubisoft",ea:"EA",xbox:"Xbox",owned:"Not installed",quiver:"Quiver",custom:"Custom",battlenet:"Battle.net",other:"Playnite"};
+function pcCfg(){cfg.pc=cfg.pc||{};if(!Array.isArray(cfg.pc.groups))cfg.pc.groups=[];if(!Array.isArray(cfg.pc.activeFilters))cfg.pc.activeFilters=[];return cfg.pc}
+function pcGroups(){return pcCfg().groups}
+function pcEdNotify(){scheduleSave();shelf("pcGroupsChanged")}
+function pcEdRuleMatch(rule,g){
+  if(!rule||typeof rule!=="object")return false;
+  if(Array.isArray(rule.genres)&&rule.genres.length){
+    const gg=String(g.genres||"").toLowerCase();
+    if(!rule.genres.some(x=>gg.includes(String(x).toLowerCase())))return false;
+  }
+  if(Array.isArray(rule.sources)&&rule.sources.length){
+    const src=g.source==="owned"?(g.store||"owned"):(g.source||"steam");
+    if(!rule.sources.includes(src))return false;
+  }
+  if(Array.isArray(rule.status)&&rule.status.length&&!rule.status.includes(g.status||""))return false;
+  if(rule.install==="installed"&&!g.installed)return false;
+  if(rule.install==="not_installed"&&g.installed)return false;
+  if(rule.favOnly&&!g.fav)return false;
+  if(rule.unplayed&&(g.minutes||0)>0)return false;
+  if(rule.multiplayer&&!g.multiplayer)return false;
+  return true;
+}
+function pcEdGroupMatch(grp,g){
+  if(!grp||!g)return false;
+  if(grp.kind==="dynamic")return (Array.isArray(grp.ids)&&grp.ids.includes(g.id))||pcEdRuleMatch(grp.rule,g);
+  return Array.isArray(grp.ids)&&grp.ids.includes(g.id);
+}
+function pcEdAllGenres(L){
+  const set=new Set(["Horror","Action","Adventure","RPG","Indie","Strategy","Simulation","Racing","Sports","Shooter","Platformer","Puzzle"]);
+  for(const g of L){
+    for(const part of String(g.genres||"").split(/[;,]/)){
+      const s=part.trim();if(s)set.add(s);
+    }
+  }
+  return [...set].sort((a,b)=>a.localeCompare(b));
+}
+function pcGameChoiceRow(g,cls){
+  return {t:"choice",label:g.title,opts:[["show","On the shelf"],["fav","♥ Favorite"],["hide","Hidden"]],d:"show",nosave:true,ns:true,keys:"pc edit "+g.title,
+    ...(cls?{cls}:{}),
+    sub:()=>({text:[g.installed?(PC_SRC[g.source]||"Steam"):`${PC_SRC[g.store||"other"]||"Playnite"} · Not installed`,g.genres?String(g.genres).split(";")[0].trim():""].filter(Boolean).join(" · ")}),
+    info:"Left / right: on the shelf, a favourite (♥, also on the Home shelf), or hidden from every shelf.",
     get:()=>g.hidden?"hide":g.fav?"fav":"show",
     set:async v=>{const id=g.id,wasHidden=g.hidden;g.fav=v==="fav";g.hidden=v==="hide";
       const ui=cfg.ui;ui.favorites=(Array.isArray(ui.favorites)?ui.favorites:[]).filter(x=>String(x)!==id);if(g.fav)ui.favorites.push(id);
       ui.hidden=(Array.isArray(ui.hidden)?ui.hidden:[]).filter(x=>String(x)!==id);if(g.hidden)ui.hidden.push(id);
       try{await shelf("setHidden",id,g.hidden);await shelf("setFav",id,g.fav)}catch{}
-      if(g.hidden!==wasHidden)Promise.resolve(shelf("hiddenList")).then(l=>{hidden=Array.isArray(l)?l:[];bump()}).catch(()=>{}); /* the Hidden games page follows */
-      bump()}}))}
+      if(g.hidden!==wasHidden)Promise.resolve(shelf("hiddenList")).then(l=>{hidden=Array.isArray(l)?l:[];bump()}).catch(()=>{});
+      shelf("pcGroupsChanged");bump()}};
+}
+async function pcCatImport(kind){
+  const fn=kind==="steam"?api.importSteamCats:api.importPlayniteCats;if(!fn)return;
+  toast(kind==="steam"?"Reading Steam collections…":"Reading Playnite categories…");
+  try{
+    const r=await fn();if(!r)return;
+    pcCfg().groups=Array.isArray(r.groups)?r.groups:pcGroups();
+    if(Array.isArray(r.favorites))cfg.ui.favorites=r.favorites;
+    pcEditCache=null;await shelf("pcGroupsChanged");bump();
+    toast(kind==="steam"?`Imported ${(r.added||0)+(r.updated||0)} Steam collection${(r.added||0)+(r.updated||0)===1?"":"s"}`:`Imported ${(r.added||0)+(r.updated||0)} Playnite categor${(r.added||0)+(r.updated||0)===1?"y":"ies"}`);
+  }catch(e){toast(errMsg(e))}
+}
+function pcCatCreateNew(){
+  const gs=pcGroups();if(gs.length>=50){toast("Maximum of 50 PC categories reached.");return}
+  const g={id:"pcc-"+Date.now().toString(36),name:"New category",kind:"manual",ids:[],collapsed:false};
+  gs.push(g);pcEdNotify();pcCatOpen(g);
+}
+function pcCatOpen(grp){
+  if(!grp)return;
+  pcCatCur={id:grp.id,q:""};
+  MORE["pc-cat-edit"]={id:"pc-cat-edit",name:grp.name,lead:"Configure manual game memberships or dynamic filter rules (e.g. Horror, Online, Not installed).",rows:[{t:"dyn",fn:pcCatEditRows}]};
+  openSub({kind:"more",id:"pc-cat-edit"});
+}
+function pcGameAssignOpen(g){
+  if(!g)return;
+  pcAssignGid=g.id;
+  MORE["pc-cat-assign"]={id:"pc-cat-assign",name:`Categorize: ${g.title}`.slice(0,55),lead:"Choose which PC categories this game belongs to.",rows:[{t:"dyn",fn:pcGameAssignRows}]};
+  openSub({kind:"more",id:"pc-cat-assign"});
+}
+function pcGameAssignRows(){
+  const L=pcEdit(),g=L.find(x=>x.id===pcAssignGid);
+  if(!g)return [infoRow("Game not found","")];
+  const out=[pcGameChoiceRow(g,"")];
+  const manual=pcGroups().filter(x=>x.kind!=="dynamic");
+  out.push(H("Manual categories"));
+  if(!manual.length){
+    out.push(A("No manual categories yet","+ New","Create a category first to assign games manually.",()=>{leaveSub();pcCatCreateNew()},{ns:true}));
+  }else{
+    for(const grp of manual){
+      const k="assign|"+grp.id+"|"+g.id;
+      if(!pcCatRowsCache.has(k))pcCatRowsCache.set(k,T(grp.name,"",false,`Show ${g.title} inside ${grp.name}.`,{
+        get:()=>(grp.ids||[]).includes(g.id),
+        set:v=>{grp.ids=Array.isArray(grp.ids)?grp.ids:[];const i=grp.ids.indexOf(g.id);if(v&&i<0)grp.ids.push(g.id);if(!v&&i>=0)grp.ids.splice(i,1);pcEdNotify();bump()},
+        ns:true
+      }));
+      out.push(pcCatRowsCache.get(k));
+    }
+  }
+  const dyn=pcGroups().filter(x=>x.kind==="dynamic"&&pcEdGroupMatch(x,g));
+  if(dyn.length)out.push(H("Dynamic categories matched"),...dyn.map(x=>infoRow(x.name+" ⚡","Matched automatically by rule")));
+  return out;
+}
+function pcCatGamesPickerRows(){
+  const L=pcEdit();
+  const out=[];
+  const qKey="picker-search";
+  if(!pcCatRowsCache.has(qKey))pcCatRowsCache.set(qKey,X("Search games to categorize","","Type a game name, then open a game to toggle its categories.",{get:()=>pcEdQ,set:v=>{pcEdQ=String(v||"")},nosave:true,live:()=>bump(),ns:true,ph:"Resident Evil, Hades…"}));
+  out.push(pcCatRowsCache.get(qKey));
+  const q=pcEdQ.trim().toLowerCase(),gs=pcGroups();
+  const list=(q?L.filter(g=>g.title.toLowerCase().includes(q)):L).slice(0,120);
+  if(!list.length)return [...out,infoRow("No matching PC games","")];
+  for(const g of list){
+    const cats=gs.filter(gr=>pcEdGroupMatch(gr,g)).map(gr=>gr.name);
+    out.push(A(g.title,"Categories…","Open category checkboxes for "+g.title,()=>pcGameAssignOpen(g),{ns:true,sub:()=>({text:[g.fav?"♥":"",cats.length?cats.join(", "):"Uncategorized"].filter(Boolean).join(" · ")})}));
+  }
+  return out;
+}
+function pcCatEditRows(){
+  const cur=pcCatCur,grp=cur&&pcGroups().find(x=>x.id===cur.id);
+  if(!grp)return [infoRow("This category was removed","")];
+  const L=pcEdit(),k=p=>p+"|"+grp.id;
+  if(!pcCatRowsCache.has(k("name")))pcCatRowsCache.set(k("name"),X("Category name","","Shown in Settings and in the main shelf filter dropdown.",{get:()=>grp.name,set:v=>{const t=String(v||"").replace(/\s+/g," ").trim().slice(0,40);if(t){grp.name=t;if(MORE["pc-cat-edit"])MORE["pc-cat-edit"].name=t}},live:()=>{pcEdNotify()},ns:true}));
+  if(!pcCatRowsCache.has(k("mode")))pcCatRowsCache.set(k("mode"),C("Category mode","",[["manual","Manual list"],["dynamic","Dynamic filter ⚡"]],"manual","Manual list: pick games yourself. Dynamic filter: fills automatically from genres, store, multiplayer or install state.",{
+    get:()=>grp.kind==="dynamic"?"dynamic":"manual",
+    set:v=>{grp.kind=v==="dynamic"?"dynamic":"manual";if(grp.kind==="dynamic"&&!grp.rule)grp.rule={};pcEdNotify()},
+    live:()=>bump(),ns:true
+  }));
+  const out=[pcCatRowsCache.get(k("name")),pcCatRowsCache.get(k("mode"))];
+  if(grp.kind==="dynamic"){
+    grp.rule=grp.rule||{};
+    out.push(H("Dynamic filter rules (matches games fitting all enabled rules)"));
+    const curGenres=Array.isArray(grp.rule.genres)?grp.rule.genres:[];
+    const allG=pcEdAllGenres(L);
+    out.push(C("Install status","",[ ["","Any"],["installed","Installed only"],["not_installed","Not installed only"] ],"","Filter by whether the game is installed.",{
+      get:()=>grp.rule.install||"",set:v=>{if(v)grp.rule.install=v;else delete grp.rule.install;pcEdNotify();bump()},ns:true
+    }));
+    out.push(T("Favorites only","",false,"Only include ♥ Favorite PC games.",{
+      get:()=>!!grp.rule.favOnly,set:v=>{if(v)grp.rule.favOnly=true;else delete grp.rule.favOnly;pcEdNotify();bump()},ns:true
+    }));
+    out.push(T("Online / Multiplayer","",false,"Include online, multiplayer or co-op games.",{
+      get:()=>!!grp.rule.multiplayer,set:v=>{if(v)grp.rule.multiplayer=true;else delete grp.rule.multiplayer;pcEdNotify();bump()},ns:true
+    }));
+    out.push(T("Never played","",false,"Only include games with 0 playtime.",{
+      get:()=>!!grp.rule.unplayed,set:v=>{if(v)grp.rule.unplayed=true;else delete grp.rule.unplayed;pcEdNotify();bump()},ns:true
+    }));
+    out.push(C("Store / Source","",[ ["","Any store"],["steam","Steam"],["epic","Epic Games"],["gog","GOG"],["ea","EA"],["ubisoft","Ubisoft"],["xbox","Xbox"],["custom","Custom"] ],"","Optionally restrict to games from one store.",{
+      get:()=>(Array.isArray(grp.rule.sources)&&grp.rule.sources[0])||"",
+      set:v=>{if(v)grp.rule.sources=[v];else delete grp.rule.sources;pcEdNotify();bump()},ns:true
+    }));
+    out.push(H("Genres (match any checked genre)",{em:()=>curGenres.length?curGenres.join(", "):"Any"}));
+    for(const gn of allG){
+      out.push(T(gn,"",false,`Include games tagged with ${gn}.`,{
+        get:()=>curGenres.includes(gn),
+        set:v=>{const list=Array.isArray(grp.rule.genres)?[...grp.rule.genres]:[];const i=list.indexOf(gn);if(v&&i<0)list.push(gn);if(!v&&i>=0)list.splice(i,1);if(list.length)grp.rule.genres=list;else delete grp.rule.genres;pcEdNotify();bump()},
+        ns:true
+      }));
+    }
+    const matched=L.filter(g=>pcEdGroupMatch(grp,g));
+    out.push(H(`Preview matches (${matched.length})`),...(matched.length?matched.slice(0,15).map(g=>infoRow(g.title,PC_SRC[g.store||g.source]||"")):[infoRow("No PC games match these rules yet","")]));
+  }else{
+    if(!pcCatRowsCache.has(k("q")))pcCatRowsCache.set(k("q"),X("Search games to add / remove","","Type a title to quickly toggle games into or out of this category.",{get:()=>cur.q,set:v=>{cur.q=String(v||"")},nosave:true,live:()=>bump(),ns:true,ph:"Hollow Knight, Elden Ring…"}));
+    out.push(pcCatRowsCache.get(k("q")));
+    const tog=g=>{const tk="m|"+grp.id+"|"+g.id;
+      if(!pcCatRowsCache.has(tk))pcCatRowsCache.set(tk,T(g.title,"",false,`Include ${g.title} in ${grp.name}.`,{
+        get:()=>(grp.ids||[]).includes(g.id),
+        set:v=>{grp.ids=Array.isArray(grp.ids)?grp.ids:[];const i=grp.ids.indexOf(g.id);if(v&&i<0)grp.ids.push(g.id);if(!v&&i>=0)grp.ids.splice(i,1);pcEdNotify();bump()},
+        sub:()=>({text:PC_SRC[g.installed?g.source:(g.store||"other")]||""}),ns:true
+      }));
+      return pcCatRowsCache.get(tk);
+    };
+    const q=cur.q.trim().toLowerCase();
+    if(q){
+      const hits=L.filter(g=>g.title.toLowerCase().includes(q)).slice(0,40);
+      out.push(H(hits.length?`Matches for “${cur.q.trim()}”`:`No game matches “${cur.q.trim()}”`),...hits.map(tog));
+    }
+    const assigned=L.filter(g=>(grp.ids||[]).includes(g.id));
+    out.push(H(`In ${grp.name} (${assigned.length})`),...(assigned.length?assigned.map(tog):[infoRow("No games in this category yet","Search above and toggle games on")]));
+  }
+  const delBtn=A("Delete this category","Delete","Removes this category (games stay on the PC shelf). Press twice.",()=>{
+    if(delBtn.armed){
+      const gs=pcGroups(),i=gs.findIndex(x=>x.id===grp.id);if(i>=0)gs.splice(i,1);
+      pcCfg().activeFilters=pcCfg().activeFilters.filter(x=>x!==grp.id);
+      pcEdNotify();play("back");toast(`${grp.name} deleted`);leaveSub();render();
+    }else{
+      delBtn.armed=true;delBtn.btn="Press again";setTimeout(()=>{delBtn.armed=false;delBtn.btn="Delete";bump()},4000);bump();
+    }
+  },{ns:true});
+  out.push(H(""),delBtn);
+  return out;
+}
+function pcEditRows(){const L=pcEdit();
+  if(!L.length)return [{t:"action",label:"No PC games yet",btn:"—",info:"Games from Steam, Epic and the other stores show up here once they're on the PC shelf.",run:()=>{},ns:true,dim:true}];
+  const rows=[];
+  if(!pcCatRowsCache.has("ed-search"))pcCatRowsCache.set("ed-search",X("Search PC games","","Filter the organizer below by game title or genre.",{get:()=>pcEdQ,set:v=>{pcEdQ=String(v||"")},nosave:true,live:()=>bump(),ns:true,ph:"Title, Horror…"}));
+  rows.push(pcCatRowsCache.get("ed-search"));
+  rows.push(A("New category","+ New","Create a manual PC category (e.g. Aguardando, Zerados) or dynamic filter (e.g. Horror genre).",pcCatCreateNew,{ns:true}));
+  if(api.importSteamCats)rows.push(A("Import Steam collections","Import","Imports your Steam collections (Favoritos, Aguardando, Zerados, Online ⚡…) without altering Steam.",()=>pcCatImport("steam"),{ns:true}));
+  if(api.importPlayniteCats)rows.push(A("Import Playnite categories","Import","Imports categories from Playnite into PC shelf groups.",()=>pcCatImport("playnite"),{ns:true}));
+  rows.push(A("Categorize by game","Choose game…","Pick a game and check off which categories it belongs to.",()=>{MORE["pc-cat-games"]={id:"pc-cat-games",name:"Categorize by game",lead:"Pick a PC game to assign it to categories.",rows:[{t:"dyn",fn:pcCatGamesPickerRows}]};openSub({kind:"more",id:"pc-cat-games"})},{ns:true}));
+
+  const q=pcEdQ.trim().toLowerCase();
+  if(q){
+    const hits=L.filter(g=>g.title.toLowerCase().includes(q)||String(g.genres||"").toLowerCase().includes(q));
+    rows.push(H(`Search results (${hits.length})`));
+    if(!hits.length)rows.push(infoRow("No PC games match",pcEdQ));
+    else for(const g of hits.slice(0,80))rows.push(pcGameChoiceRow(g,"pc-cat-item"));
+    return rows;
+  }
+
+  const hdr=(id,name,count,isDyn,open,toggle)=>({t:"action",cls:"pc-cat-hdr"+(open?" open":"")+(isDyn?" dyn":""),label:`${open?"−":"+"} ${String(name).toUpperCase()} (${count})${isDyn?" ⚡":""}`,btn:open?"Collapse":"Expand",info:"Press Enter to expand or collapse this Steam-style category.",run:toggle,ns:true});
+  const favGames=L.filter(g=>g.fav),fOpen=!!pcEdOpenVirtual.__favorites;
+  rows.push(hdr("__favorites","Favorites",favGames.length,false,fOpen,()=>{pcEdOpenVirtual.__favorites=!fOpen;bump()}));
+  if(fOpen){
+    if(!favGames.length)rows.push(infoRow("No favorite PC games yet","Press ♥ Favorite on any game"));
+    else for(const g of favGames)rows.push(pcGameChoiceRow(g,"pc-cat-item"));
+  }
+
+  const groups=pcGroups();
+  for(const grp of groups){
+    const matched=L.filter(g=>pcEdGroupMatch(grp,g)),open=grp.collapsed===false;
+    rows.push(hdr(grp.id,grp.name,matched.length,grp.kind==="dynamic",open,()=>{grp.collapsed=open;scheduleSave();bump()}));
+    if(open){
+      rows.push(A(`Edit “${grp.name}”`,grp.kind==="dynamic"?"Rules ⚡":"Games & edit","Edit category name, add or remove games, or change dynamic rules.",()=>pcCatOpen(grp),{cls:"pc-cat-item pc-cat-edit",ns:true}));
+      if(!matched.length)rows.push(infoRow("No games in this category yet","Press Edit above to add games or set rules"));
+      else for(const g of matched)rows.push(pcGameChoiceRow(g,"pc-cat-item"));
+    }
+  }
+
+  const uncat=L.filter(g=>!groups.some(gr=>pcEdGroupMatch(gr,g))),uOpen=!!pcEdOpenVirtual.__uncategorized;
+  rows.push(hdr("__uncategorized","Uncategorized",uncat.length,false,uOpen,()=>{pcEdOpenVirtual.__uncategorized=!uOpen;bump()}));
+  if(uOpen){
+    if(!uncat.length)rows.push(infoRow("Every PC game is categorized",""));
+    else for(const g of uncat.slice(0,150))rows.push(pcGameChoiceRow(g,"pc-cat-item"));
+  }
+  return rows;
+}
 function hiddenRows(){if(!(window.Shelf&&Shelf.hiddenList))return [];const L=hidden||[];
   if(!L.length)return [{t:"action",label:"No hidden games",btn:"—",info:"Hide a game from its Details panel (Hide). It shows up here so you can bring it back.",run:()=>{},ns:true,dim:true}];
   const names=Object.fromEntries(consoleList().map(c=>[c.id,c.name]));
@@ -1740,6 +1966,7 @@ function route(page,o){if(!page)return;o=o||{};if(RG_SUB&&RG_SUB[page]&&MORE[RG_
   if(page==="coversearch"&&o.id){coverSearch={id:String(o.id),title:String(o.title||""),term:String(o.term||o.title||"")};
     MORE.coversearch={id:"coversearch",name:"Search for a cover",lead:`Covers for ${coverSearch.title} under another name.`,rows:[{t:"dyn",fn:coverSearchRows}]};
     goSecId(/^(steam|epic)-/.test(coverSearch.id)?"pc":"custom");focus="page";rowI=0;openSub({kind:"more",id:"coversearch"});return}
+  if(page==="pc-edit"&&MORE["pc-edit"]){goSecId("pc");focus="page";rowI=0;inMore("pc-edit");return}
   // (beta.9) any page of its own by its id (Android's Ports & custom APKs, Video previews…): opened in the section that holds it
   if(MORE[page]&&!PAGE_MAP[page]){const s=SECTIONS.find(x=>x&&Array.isArray(x.rows)&&x.rows.some(r=>r&&r.pg===page));if(s){goSecId(s.id);focus="page";rowI=0;openSub({kind:"more",id:page});return}}
   if(page==="rename"&&o.ref){const file=String(o.fileTitle||o.title||""),cur=String(o.title||"");renameState={ref:o.ref,name:cur,saved:cur,file,renamed:!!o.fileTitle&&o.fileTitle!==cur};
@@ -1769,7 +1996,7 @@ function prep(inf,opts){opts=opts||{};ensureDom();openId++;info=inf;cfg=clone(in
   try{const g=window.BS_activePad?window.BS_activePad():[...(navigator.getGamepads?navigator.getGamepads():[])].find(x=>x&&x.connected);if(g)padId=g.id}catch{}
   document.body.classList.toggle("bss-reduce",rmOn());
   applyTint();build();kidOpen=false;kidOpts=opts;if(kidLocked()){SECTIONS=[kidLockSection()];sideSig="";focus="page";rowI=0;return} /* (beta.14) Kid mode: the PIN first */route(opts.page,opts)}
-function show(inf,opts){if(window.Shelf&&Shelf.previewStop)Shelf.previewStop(); /* (beta.7: a playing preview ends when Settings opens) */prep(inf,opts);E.osk.classList.remove("on");root.classList.add("on");root.setAttribute("aria-hidden","false");isOpen=true;active=true;cover(true);fit();render();startPoll();loadAsync();
+function show(inf,opts){if(window.Shelf&&Shelf.previewStop)Shelf.previewStop(); /* (beta.7: a playing preview ends when Settings opens) */pcEditCache=null;pcCatRowsCache.clear();pcEdQ="";prep(inf,opts);E.osk.classList.remove("on");root.classList.add("on");root.setAttribute("aria-hidden","false");isOpen=true;active=true;cover(true);fit();render();startPoll();loadAsync();
 }
 // (beta.10) how many games the last library scan found (every console's, from Shelf.gameCounts), for the rescan's "Found N new games"
 function libTotal(){const m=shelf("gameCounts");if(!m||typeof m!=="object")return null;let n=0;for(const k in m)if(typeof m[k]==="number")n+=m[k];return n}
@@ -2874,7 +3101,7 @@ function renderPage(){
           d.onclick=()=>{if(edit)commitEdit();ci=j;rowI=idx;focus="page";openConsole(c.id)};wrap.append(d)});
         list.append(wrap);rowEls[idx]=wrap;gridEl=wrap;return}
       const R=r.t==="result"?r.row:r,d=document.createElement("div"),editing=edit&&sameRow(edit.row,r)&&idx===rowI;
-      d.className="bss-row"+(r.t==="theme"?" theme":"")+(editing?" editing":"")+(r.dim?" dis":"");
+      d.className="bss-row"+(r.t==="theme"?" theme":"")+(editing?" editing":"")+(r.dim?" dis":"")+(r.cls?" "+r.cls:"");
       d.innerHTML=`<div class="lbl"><span class="nm">${r.t==="result"?hi(r.label):esc(r.label)}</span>${r.t==="result"?`<span class="where">${esc(r.where)}</span>`:'<span class="sub"></span>'}</div><span class="chg"></span><div class="bss-val"></div>`;
       d._r=r;d._sub=d.querySelector(".sub")||{className:"",_h:""};d._val=d.querySelector(".bss-val");
       // the handheld (Android, 0.3.4): no info column; the focused row shows its own explanation under its name (android.css)
