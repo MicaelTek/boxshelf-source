@@ -95,14 +95,15 @@ function mark(what) {
 // systemName, start: async () => (opens the store's link) }. ctx (from main.js): busyCheck, setLaunching, taskbarHide,
 // taskbarShow, beginRun, onExit, homeBegin, homeMeta, watchPad, coverAgain, coverWhileStarting, coverDeadline,
 // historyTrack, gaveUp, launcher
-const COVER_MAX = 25; // s: the longest the loading cover waits for the game (a launcher's own question shows after it)
-const COVER_AFTER_PROCESS = 12; // s: once the game's process is up, the latest its window has to show
+const COVER_MAX = 45; // s: the longest the loading cover waits for the game (a launcher's own question shows after it)
+const COVER_AFTER_PROCESS = 25; // s: once the game's process is up, the latest its window has to show
+const COVER_MIN_MS = 2500; // ms: minimum hold so the loading screen transitions cleanly once the game window opens
 async function launchWatched(g) {
   const c = ctx, lnx = (c.platform || process.platform) === 'linux'; // (beta.12, Linux: Steam games; no window to watch there, so a short cover)
   c.busyCheck();
   c.setLaunching(true); try { await c.taskbarHide(); } finally { c.setLaunching(false); }
   tlBegin(g.title);
-  const w = gamewatch.watch({ kind: g.kind, appid: g.appid, dir: g.dir, exe: g.exe, title: g.title });
+  const w = gamewatch.watch({ kind: g.kind, appid: g.appid, dir: g.dir, exe: g.exe, title: g.title, initialPollMs: g.initialPollMs });
   let run;
   try { run = c.launcher.adopt(g.title, gamewatch, c.onExit); } catch (e) { gamewatch.stop(); throw e; }
   c.beginRun();
@@ -121,7 +122,7 @@ async function launchWatched(g) {
   w.on('handover', pid => { if (run.isCurrent() && pid) { run.setPid(pid); c.watchPad({ appPid: pid, home: true }); c.coverAgain(); } });
   w.on('ended', info => { if (run.isCurrent()) run.finish({ watched: true, cancelled: !!(info && info.cancelled) }); });
   w.on('timeout', () => { if (!run.isCurrent()) return; run.release(); mark('gave up'); c.gaveUp(g); });
-  const cover = c.coverWhileStarting(lnx ? 8 : COVER_MAX);
+  const cover = c.coverWhileStarting(lnx ? 8 : COVER_MAX, lnx ? 800 : COVER_MIN_MS);
   return { watching: true, cover };
 }
 // the game's window went (padwatch): look for its end now, not at the next poll

@@ -68,6 +68,20 @@ function launchEmulator(sysCfg, onExit) {
 }
 
 function launchApp(exe, onExit, args) { return start(exe, Array.isArray(args) ? args : [], onExit); }
+function spawnDetached(exe, args) {
+  exe = exe && expand(String(exe).trim().replace(/^"(.*)"$/, '$1'));
+  if (!exe || !isFile(exe)) throw new Error(`Can't find ${exe || 'the program'}. Check its path in Settings.`);
+  const opts = Object.assign({ cwd: path.dirname(exe), windowsHide: false, stdio: 'ignore', detached: true }, process.platform === 'linux' ? { env: cleanEnv(process.env) } : {});
+  const list = Array.isArray(args) ? args : [];
+  let child;
+  if (process.platform === 'win32' && /\.(bat|cmd)$/i.test(exe)) {
+    const q = s => '"' + String(s).replace(/"/g, '') + '"';
+    child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', '"' + [exe, ...list].map(q).join(' ') + '"'], Object.assign(opts, { windowsVerbatimArguments: true }));
+  } else child = spawn(exe, list, opts);
+  child.on('error', () => {});
+  child.unref();
+  return child;
+}
 // (beta.12) a game through RocketLauncher: started like an app, and closed through its emulator (closeRunning)
 function launchRocket(exe, args, onExit) { const r = start(exe, args, onExit); if (running) running.closeKids = true; return r; }
 
@@ -159,4 +173,4 @@ function adopt(name, watcher, onExit) {
 let onEvent = () => {};
 function setEventHook(fn) { onEvent = typeof fn === 'function' ? fn : () => {}; }
 
-module.exports = { cleanEnv, linuxTree, linuxTargets, buildArgs, launchGame, launchEmulator, launchApp, launchRocket, launchSteam, isRunning, runningName, setRunningName, busyMessage, stopRunning, closeRunning, adopt, setEventHook };
+module.exports = { cleanEnv, linuxTree, linuxTargets, buildArgs, launchGame, launchEmulator, launchApp, spawnDetached, launchRocket, launchSteam, isRunning, runningName, setRunningName, busyMessage, stopRunning, closeRunning, adopt, setEventHook };

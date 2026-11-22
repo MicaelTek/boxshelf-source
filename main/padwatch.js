@@ -185,6 +185,17 @@ public class XI {
       if (r.L <= mi.rcMonitor.L && r.T <= mi.rcMonitor.T && r.R >= mi.rcMonitor.R && r.B >= mi.rcMonitor.B) { found = true; return false; }
       return true; }, IntPtr.Zero);
     return found; }
+  public static bool HasReadyWindow(int[] pids) {
+    bool found = false;
+    EnumWindows((h, l) => {
+      if (!IsWindowVisible(h) || IsIconic(h)) return true;
+      uint pid; GetWindowThreadProcessId(h, out pid); if (Array.IndexOf(pids, (int)pid) < 0) return true;
+      FSRECT r; if (!GetWindowRect(h, out r)) return true;
+      if ((r.R - r.L) >= 400 && (r.B - r.T) >= 300) { found = true; return false; }
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
   // The taskbar only stays behind a fullscreen game while Windows counts it as the fullscreen app in front, and after
   // Boxshelf's loading screen stepped aside it often didn't: the taskbar stayed over the game. ITaskbarList2's
   // MarkFullscreenWindow is Windows' own way of telling the taskbar so (only for a window that really covers its screen).
@@ -368,7 +379,7 @@ $clickDown = $false
 function ReleaseClick() { if ($script:clickDown) { [XI]::Click($false); $script:clickDown = $false; Write-Output "CLICK 0" } }
 # the quit combo's buttons ($cmask; none for "no combo") don't act as keys while held together with another of them
 $cmask = $(if ($mask -eq 0xFFFF) { 0 } else { $mask }); $mst = @{}
-$held = @(0,0,0,0,0,0); $prev = @(0,0,0,0,0,0); $mprev = 0; $mstick = 0; $acc = @(0,0,0,0,0,0); $passes = 0; $backAt = $null; $rep = @{}; $fsDone = ($fsPid -le 0); $fsSeen = 0; $fsTries = 0; $t0 = Get-Date; $probeAt = $t0
+$held = @(0,0,0,0,0,0); $prev = @(0,0,0,0,0,0); $mprev = 0; $mstick = 0; $acc = @(0,0,0,0,0,0); $passes = 0; $backAt = $null; $rep = @{}; $fsDone = ($fsPid -le 0); $fsSeen = 0; $winSeenAt = $null; $fsTries = 0; $t0 = Get-Date; $probeAt = $t0
 # the launched exe is often just a launcher: follow its children (Stremio, Electron apps…)
 $fam = @($appPid); $famAt = $t0.AddSeconds(-10); $tbAt = $t0; $frontUntil = $t0; $refAt = $t0
 function Family($root) { $set = @($root); try { $all = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId } catch { return $set }
@@ -411,9 +422,14 @@ while ($true) {
   # for a few seconds after Boxshelf handed over (FRONT): the taskbar / desktop ending up active means the game lost the
   # focus on its way up (the taskbar then shows over it until a click), so the game goes back to the front
   if ($appPid -gt 0 -and -not $menu -and $now -lt $frontUntil -and ($now - $refAt).TotalMilliseconds -gt 400) { $refAt = $now; if ([XI]::FgIsShell()) { FrontGame | Out-Null } }
-  # the game's window is up and fullscreen: Boxshelf can lift its loading screen now (gives up after a minute)
+  # the game's window is up and fullscreen (or a stable game window): Boxshelf can lift its loading screen now (gives up after 90 s)
   if ($waitFs -and $appPid -gt 0 -and ($now - $wfAt).TotalMilliseconds -gt 100) { $wfAt = $now
-    if ([XI]::FullscreenOf([int[]]$fam)) { Write-Output "GAMEFS"; $waitFs = $false; $everFs = $true } elseif (($now - $t0).TotalSeconds -gt 60) { $waitFs = $false } }
+    if ([XI]::FullscreenOf([int[]]$fam)) { Write-Output "GAMEFS"; $waitFs = $false; $everFs = $true; $winSeenAt = $null }
+    elseif ([XI]::HasReadyWindow([int[]]$fam)) {
+      if (-not $winSeenAt) { $winSeenAt = $now }
+      elseif (($now - $winSeenAt).TotalMilliseconds -ge 2500) { Write-Output "GAMEFS"; $waitFs = $false; $everFs = $true; $winSeenAt = $null }
+    } else { $winSeenAt = $null }
+    if ($waitFs -and ($now - $t0).TotalSeconds -gt 90) { $waitFs = $false } }
   # (pointer mode only: skip the slow full process listing while the game's family is already in front; it hitched the pointer)
   if ($needFam -and $appPid -gt 0 -and ($now - $famAt).TotalSeconds -gt $(if ($fsDone) { 6 } else { 2 })) { $famAt = $now; if (-not ($fsDone -and -not $waitFs -and ($fam -contains [int][XI]::FgPid()))) { $fam = Family $appPid } }
   if (-not $fsDone -and $fsPid -gt 0 -and ($now - $probeAt).TotalMilliseconds -gt 300) {

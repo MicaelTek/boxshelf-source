@@ -554,7 +554,7 @@ function bringBack() {
 // While an emulator boots, keep Boxshelf's black loading screen above it so its
 // windowed start-up never shows. Then step aside so the game is in front.
 let coverTimer = null;
-function coverWhileStarting(seconds) {
+function coverWhileStarting(seconds, minMs) {
   if (coverTimer && coverTimer.keep) clearInterval(coverTimer.keep);
   clearTimeout(coverTimer);
   if (!win || !(seconds > 0)) return 0;
@@ -600,6 +600,7 @@ function coverWhileStarting(seconds) {
   // lifts when the game's window is up and fullscreen (padwatch GAMEFS → liftCover), or after `seconds` at the latest
   coverTimer = setTimeout(lift, seconds * 1000);
   coverTimer.keep = keep; coverTimer.lift = lift; coverTimer.at = Date.now();
+  if (minMs > 0) coverTimer.minMs = minMs;
   return seconds;
 }
 
@@ -842,7 +843,7 @@ seamless.init({ cfg: () => cfg, log, platform: process.platform, runningName: ()
   busyCheck: () => busyCheck(), setLaunching: v => { launching = !!v; }, taskbarHide: () => taskbarHide(), taskbarShow: why => taskbarShow(why),
   beginRun: () => { runKind = 'watch'; pendingPower = null; }, onExit: info => onExit(info), launcher,
   homeBegin: meta => { if (cfg.ui.homeMenu !== false) homemenu.begin(meta); }, homeMeta: m => homemenu.setMeta(m),
-  watchPad: o => watchPad(o), coverAgain: () => { if (coverTimer || quitCover) padwatch.cover(true); }, coverWhileStarting: s => coverWhileStarting(s), coverDeadline: s => coverDeadline(s),
+  watchPad: o => watchPad(o), coverAgain: () => { if (coverTimer || quitCover) padwatch.cover(true); }, coverWhileStarting: (s, m) => coverWhileStarting(s, m), coverDeadline: s => coverDeadline(s),
   historyTrack: id => historyTrack(id), gaveUp: () => watchGaveUp() });
 launcher.setEventHook(what => seamless.mark(what)); // (the launch timeline: when the game's process started)
 // Sleep / Restart / Shut down the PC from the couch
@@ -1904,7 +1905,7 @@ async function launchGameNow(systemId, file, sc) {
   // The real GameCube startup (IPL) isn't held back either: the cover lifts as soon as Dolphin is up, so the whole sequence shows
   const vid = sc.bootOnLaunch !== false && !ipl && !!(themes.list([systemId])[systemId] || {}).boot;
   const slide = sc.insertAnim !== false && !vid && !ipl, minMs = slide ? 3500 : 800;
-  const want = base > 0 ? base + (padwatch.isRunning() ? 3 : 0) : 0;
+  const want = base > 0 ? base + (padwatch.isRunning() ? 8 : 0) : 0;
   const cover = coverWhileStarting(slide ? Math.max(want, minMs / 1000 + .5) : want);
   if (coverTimer) coverTimer.minMs = minMs;
   // no launch cover: still make sure the game ends up in front once its window exists
@@ -2080,13 +2081,26 @@ handle('launch:pc', async ({ id }) => { coversForGame(); /* (beta.14) */
   if (g.shellApp) { if (!/^[\w.-]+_[a-z0-9]+![\w.-]+$/i.test(g.shellApp)) throw new Error("Couldn't start that Xbox game."); busyCheck(); log('PC launch: Xbox,', g.title);
     const p = spawn('explorer.exe', ['shell:AppsFolder\\' + g.shellApp], { detached: true, stdio: 'ignore' }); p.on('error', e => log('Xbox launch', e.message)); p.unref(); return { external: true }; }
   if (!paths.isFile(g.exe)) throw new Error(`${g.title} isn't at ${g.exe} any more. ${g.source === 'quiver' ? 'Check it in Quiver Launcher.' : g.source === 'gog' ? 'Check it in GOG Galaxy.' : 'Remove it in Settings → Custom games and add it again.'}`);
+  if (seamless.on() && process.platform === 'win32') {
+    const args = launcher.buildArgs(g.args || '', '');
+    return seamless.launchWatched({
+      kind: g.source || 'custom',
+      id: g.id,
+      dir: g.dir || path.dirname(g.exe),
+      exe: g.exe,
+      title: g.title,
+      systemName: g.source === 'quiver' ? 'Quiver' : g.source === 'gog' ? 'GOG' : 'Custom',
+      initialPollMs: 350,
+      start: () => launcher.spawnDetached(g.exe, args)
+    });
+  }
   busyCheck();
   launching = true; try { await taskbarHide(); } finally { launching = false; } // (beta.6)
   let r; try { r = launcher.launchApp(g.exe, onExit, launcher.buildArgs(g.args || '', '')); } catch (e) { taskbarShow('the game did not start'); throw e; } runKind = 'app'; pendingPower = null; launcher.setRunningName(g.title); log('PC launch:', g.source, g.title);
   if (cfg.ui.homeMenu !== false) homemenu.begin({ systemId: 'pc', exe: g.exe, systemName: g.source === 'quiver' ? 'Quiver' : g.source === 'gog' ? 'GOG' : 'Custom', title: g.title, hotkeys: {} });
   if (seamless.on()) historyTrack(g.id); // (beta.12, Seamless play: its playtime too)
   watchPad({ mouse: false, appPid: r.pid, fullscreenKey: null, home: true });
-  return { ...r, cover: coverWhileStarting(10) };
+  return { ...r, cover: coverWhileStarting(25, 2500) };
 });
 // (beta.5) a PC game's cover picker (main/pccovers.js): the page names the game by id and an option by key only
 const pcLookup = id => {

@@ -186,7 +186,8 @@ function create(deps = {}) {
       state: 'waiting', t0: d.now(), pids: new Set(), pid: 0, timer: null, busy: false });
     cur = w;
     d.log('game watch: waiting for', w.title || w.kind, w.dir ? '(its folder known)' : '(no install folder known)');
-    schedule(w, T.waitPollMs);
+    const firstMs = Number.isFinite(+s.initialPollMs) ? Math.max(100, +s.initialPollMs) : T.waitPollMs;
+    schedule(w, firstMs);
     return w;
   }
   // stop watching (no events)
